@@ -131,3 +131,10 @@ Chạy trên toàn bộ câu hỏi mỗi lần export, ghi vào console + `manif
 Free tier của Google **có thể dùng dữ liệu gửi lên để cải thiện model** —
 không dùng cho tài liệu nội bộ/nhạy cảm. Khi cần: paid tier hoặc self-host
 (viết thêm client cùng interface trong `gemini.py`).
+
+## Notes
+```
+python3 -m venv path/to/venv
+source path/to/venv/bin/activate
+python3 -m pip install xyz
+```
