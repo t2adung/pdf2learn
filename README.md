@@ -138,3 +138,75 @@ python3 -m venv path/to/venv
 source path/to/venv/bin/activate
 python3 -m pip install xyz
 ```
+## Cowork + Claude app
+
+[Điện thoại: thả PDF vào Google Drive]
+        │  (folder đồng bộ về Mac)
+[Claude app trên điện thoại] ──remote──> [Cowork trên Mac ở nhà]
+        │                                      │ đọc COWORK_GUIDE.md
+        │                                      │ chạy main.py, theo dõi log
+        └── nhận thông báo xong <────── copy output/ vào folder Drive
+        
+### Giai đoạn 1 — Chuẩn bị Mac ở nhà (làm 1 lần, ~15 phút)
+Bước 1. Chống ngủ. Máy ngủ = mọi thứ chết. System Settings → Displays → Advanced → Prevent automatic sleeping on power adapter when the display is off: ON. Cắm sạc thường trực. (Kiểm tra thêm Battery/Energy tuỳ bản macOS.)
+Bước 2. API key phải "sống" trong mọi shell. Cowork sẽ mở shell mới để chạy lệnh, export tạm trong terminal cũ không còn tác dụng. Ghi vào profile:
+bashecho 'export GEMINI_API_KEY=AIza...' >> ~/.zshrc
+source ~/.zshrc
+echo $GEMINI_API_KEY   # phải in ra key
+Bước 3. Tạo cấu trúc thư mục vào/ra qua Google Drive. Cài [Google Drive for desktop] trên Mac, rồi:
+bashmkdir -p ~/Google\ Drive/My\ Drive/pdf2learn-inbox
+mkdir -p ~/Google\ Drive/My\ Drive/pdf2learn-outbox
+(Đường dẫn thật có thể là ~/Library/CloudStorage/GoogleDrive-<email>/My Drive/... tuỳ bản Drive — chạy ls ~/Library/CloudStorage/ để xác định, và dùng đường dẫn đó nhất quán ở Bước 4.)
+Bước 4. Viết file hướng dẫn cho agent — trái tim của cả flow. Tạo ~/Documents/pdf2learn/pdf2learn/COWORK_GUIDE.md:
+markdown# Vận hành pdf2learn (PDF -> topics.csv + multichoice.csv)
+
+#### Đường dẫn
+- Project: ~/Documents/pdf2learn/pdf2learn
+- PDF đầu vào: <đường dẫn Drive>/pdf2learn-inbox/
+- Kết quả trả về: <đường dẫn Drive>/pdf2learn-outbox/
+
+#### Quy trình chuẩn khi được yêu cầu "xử lý file X.pdf"
+1. Copy file từ inbox vào thư mục project.
+2. Chạy:
+   cd ~/Documents/pdf2learn/pdf2learn
+   source ../.venv/bin/activate
+   python3 main.py X.pdf --level "Lớp 6"
+3. Theo dõi output. Tool tự resume: nếu bị ngắt/HTTP 429 kéo dài,
+   chờ 2 phút rồi chạy LẠI CHÍNH LỆNH ĐÓ (topic đã xong sẽ bỏ qua).
+4. Khi hoàn tất: nén runs/X/output/ thành X-package.zip,
+   copy vào pdf2learn-outbox/.
+5. Báo cáo: số topics, số câu hỏi, danh sách "warnings" trong
+   runs/X/output/manifest.json, và các câu bị loại trong
+   runs/X/work/05_questions.json (key "_dropped") nếu có.
+
+#### Quy tắc an toàn
+- KHÔNG sửa code trong project, không xoá thư mục runs/ trừ khi
+  được yêu cầu rõ ràng ("xoá cache", "làm lại từ đầu").
+- KHÔNG chạy --dry-run cho yêu cầu xử lý thật.
+- Nếu Stage 1-2 in mục lục ra: DỪNG LẠI, gửi danh sách topic cho tôi
+  duyệt trước khi chạy tiếp (trừ khi tôi nói "chạy thẳng").
+Điểm đáng chú ý ở dòng cuối: mình chủ động thiết kế human-in-the-loop vào đúng chỗ rủi ro nhất (mục lục sai → 120 request đổ sông) — bạn duyệt mục lục từ điện thoại rồi mới cho chạy tiếp, y hệt bước smoke test đã bàn nhưng giờ agent tự dừng chờ thay vì bạn phải Ctrl+C.
+Bước 5. Chạy tay 1 lần để nghiệm thu. Tự mình chạy đúng chuỗi lệnh trong guide từ đầu đến cuối. Nguyên tắc: đừng bao giờ giao cho agent một quy trình mà chính mình chưa chạy thành công — lỗi môi trường (như 3 lỗi Python bạn vừa trải qua) phải được diệt sạch trước, vì agent gặp lỗi lạ sẽ "sáng tạo" cách sửa và có thể làm rối thêm.
+
+### Giai đoạn 2 — Cài Cowork và kết nối tài khoản
+
+Tải Claude desktop/Cowork từ trang chính thức của Anthropic, đăng nhập cùng tài khoản với Claude app trên điện thoại. ⚠️ Cowork có thể yêu cầu gói trả phí — xác nhận tại support.claude.com.
+Khi Cowork hỏi quyền truy cập thư mục, cấp cho nó: thư mục project và 2 thư mục inbox/outbox. Chỉ cấp đúng 3 thư mục này, không cấp cả Home — Cowork là agent thực thi lệnh thật trên máy bạn, nguyên tắc least privilege áp dụng y như phân quyền hệ thống.
+Mở một phiên Cowork, yêu cầu nó đọc COWORK_GUIDE.md và chạy thử end-to-end với 1 PDF nhỏ ngay tại máy (bạn ngồi xem). Đây là bước nghiệm thu agent — quan sát nó có làm đúng quy trình, có dừng chờ duyệt mục lục không.
+⚠️ Bật/kiểm tra khả năng truy cập từ xa của phiên Cowork qua Claude mobile app — cách bật cụ thể bạn hỏi trực tiếp Claude trong app Cowork hoặc xem support.claude.com, vì chi tiết này mình không chắc và nó có thể thay đổi theo phiên bản.
+
+### Giai đoạn 3 — Vòng lặp sử dụng từ xa
+Từ bất kỳ đâu:
+
+Điện thoại: mở app Google Drive → upload PDF vào pdf2learn-inbox.
+Mở Claude app → vào phiên Cowork trên máy nhà → nhắn:
+
+"Có file lsdl-lop6.pdf mới trong inbox, xử lý theo COWORK_GUIDE.md"
+
+
+Agent chạy Stage 1–2, gửi danh sách mục lục → bạn duyệt: "Mục lục đúng, chạy tiếp" (hoặc "Bài 5 sai page range, sửa 01_toc.json thành 108-112 rồi redo-from 2").
+Chờ (sách 200 trang ≈ 20–30 phút) → agent báo cáo số liệu + warnings → mở app Drive lấy X-package.zip trong outbox.
+
+Troubleshooting nhanh
+Triệu chứngNguyên nhân thường gặpĐiện thoại không thấy phiên CoworkMac ngủ / Cowork bị tắt / khác tài khoản đăng nhậpAgent báo thiếu GEMINI_API_KEYBước 2 chưa vào ~/.zshrc, hoặc Cowork chạy shell khác zshChạy mãi không xongHết quota ngày của Gemini free tier — dặn agent "dừng lại, mai chạy tiếp lệnh cũ" (resume lo phần còn lại)
+Setup xong Giai đoạn 1–2 mà vướng ở bước ⚠️ nào của Cowork thì kể lại hiện tượng cụ thể, mình gỡ tiếp theo hướng khác (kể cả phương án dự phòng không cần Cowork: SSH + Tailscale từ điện thoại — thô hơn nhưng chắc chắn chạy).
