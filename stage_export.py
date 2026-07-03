@@ -37,7 +37,11 @@ def _compose_content(markdown: str, images: list) -> str:
 
 
 def export(structure: list, content: dict, images: dict, questions: dict,
-           out_dir, pdf_name: str, model: str):
+           out_dir, pdf_name: str, model: str, only_slugs=None, label="",
+           extra_warnings=None):
+    """only_slugs: nếu khác None, chỉ xuất các topic trong tập này (batch/delta export)."""
+    if only_slugs is not None:
+        structure = [r for r in structure if r["topic_slug"] in only_slugs]
     out_dir.mkdir(parents=True, exist_ok=True)
     topic_slugs = set()
     problems = []
@@ -104,13 +108,13 @@ def export(structure: list, content: dict, images: dict, questions: dict,
             "n_questions": len(questions.get(r["topic_slug"], [])),
             "images": images.get(r["topic_slug"], []),
         } for r in structure],
-        "warnings": problems,
+        "warnings": problems + list(extra_warnings or []),
     }
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # ---- báo cáo ----
-    log(f"\n📦 Package: {out_dir}")
+    log(f"\n📦 Package{label}: {out_dir}")
     log(f"   topics.csv       : {len(structure)} topics")
     log(f"   multichoice.csv  : {n_questions} câu hỏi")
     log(f"   images/          : {manifest['stats']['images']} hình")
