@@ -134,9 +134,14 @@ không dùng cho tài liệu nội bộ/nhạy cảm. Khi cần: paid tier hoặ
 
 ## Notes
 ```
-python3 -m venv path/to/venv
-source path/to/venv/bin/activate
-python3 -m pip install xyz
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r pdf2learn/requirements.txt
+EXPORT GEMINI_API_KEY=
+
+export GROQ_API_KEY=gsk_...          # free: https://console.groq.com
+python3 main.py sach.pdf --level "Lớp 6" --review
+
 ```
 ## Cowork + Claude app
 
