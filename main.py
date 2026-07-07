@@ -62,6 +62,14 @@ def main():
                     help="dùng MockGemini, không cần API key (test pipeline/format)")
     args = ap.parse_args()
 
+    # Đọc biến môi trường từ file .env nếu có (tiện chạy local, không phải export mỗi lần).
+    # Không bắt buộc cài python-dotenv: nếu thiếu thì bỏ qua, vẫn dùng export/Secrets như cũ.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
     if not args.pdf.exists():
         sys.exit(f"Không tìm thấy file: {args.pdf}")
 
@@ -174,7 +182,7 @@ def main():
                 if dropped:
                     questions.setdefault("_dropped", {})[slug] = dropped
                 save_json(caches[5], questions)
-            if args.review and slug not in review:
+            if args.review and (slug not in review or "error" in review.get(slug, {})):
                 wp = (doc, reviewer) if with_pdf_flag else None
                 review[slug] = review_one(row, content[slug],
                                           questions.get(slug, []), reviewer, wp)
@@ -303,7 +311,9 @@ def _build_reviewer(args, gemini_client):
         sys.exit(f"--reviewer {args.reviewer} cần biến môi trường {env_key}. "
                  f"Lấy free: groq -> https://console.groq.com, "
                  f"openrouter -> https://openrouter.ai/keys")
-    return OpenAICompatClient(args.reviewer, key), False
+    # max_retries=2: reviewer fail-fast — nếu Groq/OpenRouter hết quota thì bỏ qua nhanh
+    # (đánh dấu error, sẽ tự review lại ở lần chạy sau) thay vì treo pipeline hàng chục phút.
+    return OpenAICompatClient(args.reviewer, key, max_retries=2), False
 
 
 if __name__ == "__main__":

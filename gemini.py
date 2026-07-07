@@ -53,11 +53,21 @@ class Gemini:
         backoff = 5.0
         for attempt in range(1, self.max_retries + 1):
             self._throttle()
-            if raw_body is not None:
-                resp = requests.post(url, headers=headers, data=raw_body, timeout=300)
-            else:
-                resp = requests.post(url, headers=headers or {"Content-Type": "application/json"},
-                                     json=payload, timeout=300)
+            try:
+                if raw_body is not None:
+                    resp = requests.post(url, headers=headers, data=raw_body, timeout=(10, 300))
+                else:
+                    resp = requests.post(url, headers=headers or {"Content-Type": "application/json"},
+                                         json=payload, timeout=(10, 300))
+            except requests.exceptions.RequestException as e:
+                # Lỗi mạng tạm thời (timeout đọc, đứt kết nối, DNS...) -> retry với backoff
+                # thay vì để văng lên làm sập cả pipeline.
+                sleep = backoff + random.uniform(0, 2)
+                warn(f"Lỗi mạng ({type(e).__name__}), retry {attempt}/{self.max_retries} sau {sleep:.0f}s... "
+                     "[sách scan payload lớn dễ timeout — cân nhắc giảm --dpi]")
+                time.sleep(sleep)
+                backoff = min(backoff * 2, 120)
+                continue
             if resp.status_code in (429, 500, 502, 503):
                 retry_after = resp.headers.get("Retry-After")
                 sleep = float(retry_after) if retry_after else backoff
@@ -299,16 +309,25 @@ class OpenAICompatClient:
             if wait > 0:
                 time.sleep(wait)
             self._last_call = time.time()
-            resp = requests.post(
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}",
-                         "Content-Type": "application/json"},
-                json={"model": self.model,
-                      "messages": [{"role": "user", "content": prompt}],
-                      "temperature": temperature},
-                timeout=300)
+            try:
+                resp = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self.api_key}",
+                             "Content-Type": "application/json"},
+                    json={"model": self.model,
+                          "messages": [{"role": "user", "content": prompt}],
+                          "temperature": temperature},
+                    timeout=(10, 300))
+            except requests.exceptions.RequestException as e:
+                sleep = min(backoff, 60) + random.uniform(0, 2)
+                warn(f"[reviewer] Lỗi mạng ({type(e).__name__}), retry {attempt}/{self.max_retries} sau {sleep:.0f}s...")
+                time.sleep(sleep)
+                backoff = min(backoff * 2, 120)
+                continue
             if resp.status_code in (429, 500, 502, 503):
-                sleep = float(resp.headers.get("Retry-After") or backoff) + random.uniform(0, 2)
+                # Cap 60s: reviewer là bước phụ (report-only), không đáng để treo cả
+                # pipeline chờ Retry-After hàng trăm giây khi free tier hết quota.
+                sleep = min(float(resp.headers.get("Retry-After") or backoff), 60) + random.uniform(0, 2)
                 warn(f"[reviewer] HTTP {resp.status_code}, retry {attempt}/{self.max_retries} sau {sleep:.0f}s...")
                 time.sleep(sleep)
                 backoff = min(backoff * 2, 120)
