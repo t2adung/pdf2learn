@@ -70,24 +70,14 @@ def cut_pages(doc: fitz.Document, page_start: int, page_end: int,
     return data
 
 
-def generate_content(pdf_path, structure: list, client, done: dict,
-                     dpi: int = 0) -> dict:
-    """done: kết quả đã có (resume). Trả về dict {topic_slug: {content_markdown, key_points}}."""
-    doc = fitz.open(pdf_path)
-    results = dict(done)
-    for row in structure:
-        slug = row["topic_slug"]
-        if slug in results:
-            log(f"   ✓ {slug} (đã có, bỏ qua)")
-            continue
-        log(f"   → {slug}: trang {row['page_start']}-{row['page_end']}...")
-        sub_pdf = cut_pages(doc, row["page_start"], row["page_end"], dpi=dpi)
-        prompt = CONTENT_PROMPT.format(level=row["level"],
-                                       topic_title=row["topic_title"],
-                                       module_title=row["module_title"])
-        res = client.generate_json(
-            [client.pdf_part(sub_pdf, f"{slug}.pdf"), {"text": prompt}],
-            CONTENT_SCHEMA, tag="content")
-        results[slug] = res
-        yield results  # caller lưu incremental sau mỗi topic
-    doc.close()
+def generate_content_one(doc: fitz.Document, row: dict, client, dpi: int = 0) -> dict:
+    """Sinh content + key_points cho MỘT topic."""
+    slug = row["topic_slug"]
+    log(f"   [content ] trang {row['page_start']}-{row['page_end']}...")
+    sub_pdf = cut_pages(doc, row["page_start"], row["page_end"], dpi=dpi)
+    prompt = CONTENT_PROMPT.format(level=row["level"],
+                                   topic_title=row["topic_title"],
+                                   module_title=row["module_title"])
+    return client.generate_json(
+        [client.pdf_part(sub_pdf, f"{slug}.pdf"), {"text": prompt}],
+        CONTENT_SCHEMA, tag="content")

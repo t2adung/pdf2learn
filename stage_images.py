@@ -93,22 +93,15 @@ def _gen_svg(client, row: dict, key_points: list) -> Optional[str]:
     return m.group(0) if m else None
 
 
-def generate_images(pdf_path, structure: list, content: dict, client,
-                    images_dir, done: dict):
-    """Yield dict {topic_slug: [ {file, caption, source} ]} sau mỗi topic (incremental)."""
-    doc = fitz.open(pdf_path)
+def generate_images_one(doc, row: dict, content_entry: dict, client, images_dir) -> list:
+    """Sinh danh sách ảnh cho MỘT topic."""
     images_dir.mkdir(parents=True, exist_ok=True)
-    results = dict(done)
-
-    for row in structure:
-        slug = row["topic_slug"]
-        if slug in results:
-            log(f"   ✓ {slug} (đã có, bỏ qua)")
-            continue
+    slug = row["topic_slug"]
+    if True:
         cands = _extract_candidates(doc, row["page_start"], row["page_end"])
         kept = []
         if cands:
-            log(f"   → {slug}: {len(cands)} ảnh ứng viên, nhờ AI lọc...")
+            log(f"   [images ] {len(cands)} ảnh ứng viên, nhờ AI lọc...")
             parts = [{"text": FILTER_PROMPT.format(topic_title=row["topic_title"])}]
             for c in cands:
                 parts.append(client.image_part(c["data"], c["mime"]))
@@ -125,9 +118,9 @@ def generate_images(pdf_path, structure: list, content: dict, client,
             except Exception as e:
                 warn(f"{slug}: lọc ảnh lỗi ({e}), bỏ qua ảnh PDF.")
         if not kept:
-            kps = content.get(slug, {}).get("key_points", [])
+            kps = (content_entry or {}).get("key_points", [])
             if kps:
-                log(f"   → {slug}: không có ảnh gốc dùng được, sinh SVG diagram...")
+                log(f"   [images ] không có ảnh gốc dùng được, sinh SVG diagram...")
                 try:
                     svg = _gen_svg(client, row, kps)
                     if svg:
@@ -138,6 +131,4 @@ def generate_images(pdf_path, structure: list, content: dict, client,
                                      "source": "ai_svg"})
                 except Exception as e:
                     warn(f"{slug}: sinh SVG lỗi ({e}), topic không có hình.")
-        results[slug] = kept
-        yield results
-    doc.close()
+        return kept

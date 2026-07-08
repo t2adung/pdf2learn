@@ -33,6 +33,13 @@ class Gemini:
         self.interval = interval          # giãn cách giữa các request (free tier ~10 RPM)
         self.max_retries = max_retries
         self._last_call = 0.0
+        self.usage = {}  # {tag: {"calls": n, "in": tokens, "out": tokens}}
+
+    def _record(self, tag: str, tok_in: int, tok_out: int):
+        u = self.usage.setdefault(tag, {"calls": 0, "in": 0, "out": 0})
+        u["calls"] += 1
+        u["in"] += int(tok_in or 0)
+        u["out"] += int(tok_out or 0)
 
     # ---------- low level ----------
     def _throttle(self):
@@ -46,11 +53,21 @@ class Gemini:
         backoff = 5.0
         for attempt in range(1, self.max_retries + 1):
             self._throttle()
-            if raw_body is not None:
-                resp = requests.post(url, headers=headers, data=raw_body, timeout=300)
-            else:
-                resp = requests.post(url, headers=headers or {"Content-Type": "application/json"},
-                                     json=payload, timeout=300)
+            try:
+                if raw_body is not None:
+                    resp = requests.post(url, headers=headers, data=raw_body, timeout=(10, 300))
+                else:
+                    resp = requests.post(url, headers=headers or {"Content-Type": "application/json"},
+                                         json=payload, timeout=(10, 300))
+            except requests.exceptions.RequestException as e:
+                # Lỗi mạng tạm thời (timeout đọc, đứt kết nối, DNS...) -> retry với backoff
+                # thay vì để văng lên làm sập cả pipeline.
+                sleep = backoff + random.uniform(0, 2)
+                warn(f"Lỗi mạng ({type(e).__name__}), retry {attempt}/{self.max_retries} sau {sleep:.0f}s... "
+                     "[sách scan payload lớn dễ timeout — cân nhắc giảm --dpi]")
+                time.sleep(sleep)
+                backoff = min(backoff * 2, 120)
+                continue
             if resp.status_code in (429, 500, 502, 503):
                 retry_after = resp.headers.get("Retry-After")
                 sleep = float(retry_after) if retry_after else backoff
@@ -128,6 +145,9 @@ class Gemini:
                    "generationConfig": gen_config}
         resp = self._post(url, payload)
         data = resp.json()
+        um = data.get("usageMetadata", {})
+        self._record(tag, um.get("promptTokenCount", 0),
+                     um.get("candidatesTokenCount", 0) + um.get("thoughtsTokenCount", 0))
         try:
             cands = data["candidates"]
             texts = [p["text"] for p in cands[0]["content"]["parts"] if "text" in p]
@@ -170,6 +190,7 @@ class MockGemini(Gemini):
         return {"mock": f"pdf:{len(data)}bytes"}
 
     def generate_text(self, parts, tag, temperature=0.4):
+        self._record(tag, 800, 300)
         if tag == "svg_diagram":
             return ('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="200">'
                     '<rect x="10" y="10" width="200" height="60" fill="#e3f2fd" stroke="#1565c0"/>'
@@ -180,6 +201,7 @@ class MockGemini(Gemini):
         return "[mock text]"
 
     def generate_json(self, parts, schema, tag, temperature=0.3):
+        self._record(tag, 1200, 450)
         if tag == "toc":
             return {"modules": [
                 {"title": "Chương I – Mở đầu", "topics": [
@@ -203,6 +225,10 @@ class MockGemini(Gemini):
                     "Ứng dụng thực tế của X trong đời sống",
                 ],
             }
+        if tag == "content_fused":
+            base = self.generate_json(parts, schema, "content")
+            base["questions"] = self.generate_json(parts, schema, "questions")["questions"]
+            return base
         if tag == "img_filter":
             return {"keep": [{"index": 0, "caption": "Hình minh hoạ khái niệm chính (mock)"}]}
         if tag == "questions":
@@ -257,6 +283,13 @@ class OpenAICompatClient:
         self.interval = interval
         self.max_retries = max_retries
         self._last_call = 0.0
+        self.usage = {}
+
+    def _record(self, tag, tok_in, tok_out):
+        u = self.usage.setdefault(tag, {"calls": 0, "in": 0, "out": 0})
+        u["calls"] += 1
+        u["in"] += int(tok_in or 0)
+        u["out"] += int(tok_out or 0)
 
     def generate_json(self, parts: list, schema: dict, tag: str,
                       temperature: float = 0.2):
@@ -276,23 +309,35 @@ class OpenAICompatClient:
             if wait > 0:
                 time.sleep(wait)
             self._last_call = time.time()
-            resp = requests.post(
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}",
-                         "Content-Type": "application/json"},
-                json={"model": self.model,
-                      "messages": [{"role": "user", "content": prompt}],
-                      "temperature": temperature},
-                timeout=300)
+            try:
+                resp = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self.api_key}",
+                             "Content-Type": "application/json"},
+                    json={"model": self.model,
+                          "messages": [{"role": "user", "content": prompt}],
+                          "temperature": temperature},
+                    timeout=(10, 300))
+            except requests.exceptions.RequestException as e:
+                sleep = min(backoff, 60) + random.uniform(0, 2)
+                warn(f"[reviewer] Lỗi mạng ({type(e).__name__}), retry {attempt}/{self.max_retries} sau {sleep:.0f}s...")
+                time.sleep(sleep)
+                backoff = min(backoff * 2, 120)
+                continue
             if resp.status_code in (429, 500, 502, 503):
-                sleep = float(resp.headers.get("Retry-After") or backoff) + random.uniform(0, 2)
+                # Cap 60s: reviewer là bước phụ (report-only), không đáng để treo cả
+                # pipeline chờ Retry-After hàng trăm giây khi free tier hết quota.
+                sleep = min(float(resp.headers.get("Retry-After") or backoff), 60) + random.uniform(0, 2)
                 warn(f"[reviewer] HTTP {resp.status_code}, retry {attempt}/{self.max_retries} sau {sleep:.0f}s...")
                 time.sleep(sleep)
                 backoff = min(backoff * 2, 120)
                 continue
             if not resp.ok:
                 raise GeminiError(f"[reviewer] HTTP {resp.status_code}: {resp.text[:500]}")
-            text = resp.json()["choices"][0]["message"]["content"]
+            body = resp.json()
+            u = body.get("usage", {})
+            self._record(tag, u.get("prompt_tokens", 0), u.get("completion_tokens", 0))
+            text = body["choices"][0]["message"]["content"]
             return _parse_loose_json(text, tag)
         raise GeminiError("[reviewer] Hết số lần retry.")
 

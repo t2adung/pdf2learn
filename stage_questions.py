@@ -87,58 +87,45 @@ def _fmt_questions_for_validation(questions: list) -> str:
     return "\n".join(lines)
 
 
-def generate_questions(structure: list, content: dict, client,
-                       done: dict, validate: bool = True):
-    """Yield {topic_slug: [questions]} sau mỗi topic."""
-    results = dict(done)
-    for row in structure:
-        slug = row["topic_slug"]
-        if slug in results:
-            log(f"   ✓ {slug} (đã có, bỏ qua)")
-            continue
-        c = content.get(slug)
-        if not c:
-            warn(f"{slug}: chưa có content (chạy lại stage 3?), bỏ qua.")
-            results[slug] = []
-            yield results
-            continue
+def generate_questions_one(row: dict, content_entry: dict, client,
+                           validate: bool = True):
+    """Sinh câu hỏi cho MỘT topic. Trả về (questions, dropped_hoặc_None)."""
+    slug = row["topic_slug"]
+    kps = content_entry.get("key_points", [])
+    log(f"   [question] {len(kps)} key points -> sinh câu hỏi...")
+    prompt = QUESTIONS_PROMPT.format(
+        level=row["level"], topic_title=row["topic_title"],
+        content=content_entry["content_markdown"],
+        key_points="\n".join(f"- {k}" for k in kps))
+    res = client.generate_json([{"text": prompt}], QUESTIONS_SCHEMA,
+                               tag="questions", temperature=0.5)
+    questions = res.get("questions", [])
+    for q in questions:
+        q["difficulty"] = min(3, max(1, int(q.get("difficulty", 1))))
 
-        kps = c.get("key_points", [])
-        log(f"   → {slug}: {len(kps)} key points -> sinh câu hỏi...")
-        prompt = QUESTIONS_PROMPT.format(
-            level=row["level"], topic_title=row["topic_title"],
-            content=c["content_markdown"],
-            key_points="\n".join(f"- {k}" for k in kps))
-        res = client.generate_json([{"text": prompt}], QUESTIONS_SCHEMA,
-                                   tag="questions", temperature=0.5)
-        questions = res.get("questions", [])
-        for q in questions:
-            q["difficulty"] = min(3, max(1, int(q.get("difficulty", 1))))
-
-        if validate and questions:
-            log(f"     Validation: giải lại {len(questions)} câu để kiểm tra đáp án...")
-            vp = VALIDATE_PROMPT.format(
-                content=c["content_markdown"],
-                questions=_fmt_questions_for_validation(questions))
-            try:
-                vres = client.generate_json([{"text": vp}], VALIDATE_SCHEMA,
-                                            tag="validate", temperature=0.1)
-                solved = {a["index"]: a["answer"] for a in vres.get("answers", [])}
-                passed, dropped = [], []
-                for i, q in enumerate(questions):
-                    if solved.get(i, q["correct_answer"]) == q["correct_answer"]:
-                        passed.append(q)
-                    else:
-                        dropped.append({"question": q["question"],
-                                        "claimed": q["correct_answer"],
-                                        "solved": solved.get(i)})
-                if dropped:
-                    warn(f"{slug}: loại {len(dropped)} câu nghi vấn "
-                         f"(đáp án tự giải khác đáp án khai báo).")
-                    results.setdefault("_dropped", {})[slug] = dropped
-                questions = passed
-            except Exception as e:
-                warn(f"{slug}: validation lỗi ({e}), giữ nguyên câu hỏi chưa kiểm chứng.")
-
-        results[slug] = questions
-        yield results
+    dropped = None
+    if validate and questions:
+        log(f"   [validate] giải lại {len(questions)} câu để kiểm tra đáp án...")
+        vp = VALIDATE_PROMPT.format(
+            content=content_entry["content_markdown"],
+            questions=_fmt_questions_for_validation(questions))
+        try:
+            vres = client.generate_json([{"text": vp}], VALIDATE_SCHEMA,
+                                        tag="validate", temperature=0.1)
+            solved = {a["index"]: a["answer"] for a in vres.get("answers", [])}
+            passed, dropped_list = [], []
+            for i, q in enumerate(questions):
+                if solved.get(i, q["correct_answer"]) == q["correct_answer"]:
+                    passed.append(q)
+                else:
+                    dropped_list.append({"question": q["question"],
+                                         "claimed": q["correct_answer"],
+                                         "solved": solved.get(i)})
+            if dropped_list:
+                warn(f"{slug}: loại {len(dropped_list)} câu nghi vấn "
+                     f"(đáp án tự giải khác đáp án khai báo).")
+                dropped = dropped_list
+            questions = passed
+        except Exception as e:
+            warn(f"{slug}: validation lỗi ({e}), giữ nguyên câu hỏi chưa kiểm chứng.")
+    return questions, dropped

@@ -88,55 +88,36 @@ def _fmt_questions(questions: list) -> str:
     return "\n".join(lines)
 
 
-def run_review(structure: list, content: dict, questions: dict, reviewer,
-               done: dict, with_pdf=None):
-    """with_pdf: (pdf_path, gemini_client) nếu reviewer đọc được PDF (gemini-pro).
-    Yield {topic_slug: review_result} incremental."""
-    results = dict(done)
-    for row in structure:
-        slug = row["topic_slug"]
-        if slug in results:
-            log(f"   ✓ {slug} (đã review, bỏ qua)")
-            continue
-        c = content.get(slug)
-        qs = questions.get(slug, [])
-        if not c:
-            results[slug] = {"skipped": "no content"}
-            yield results
-            continue
-
-        prompt = REVIEW_PROMPT.format(
-            level=row["level"], topic_title=row["topic_title"],
-            content=c["content_markdown"],
-            key_points="\n".join(f"- {k}" for k in c.get("key_points", [])),
-            questions=_fmt_questions(qs) if qs else "(chưa có câu hỏi)",
-            faithfulness_extra=FAITHFULNESS_EXTRA if with_pdf else "")
-
-        parts = [{"text": prompt}]
-        if with_pdf:
-            import fitz
-            from stage_content import cut_pages
-            pdf_path, gclient = with_pdf
-            doc = fitz.open(pdf_path)
-            sub = cut_pages(doc, row["page_start"], row["page_end"])
-            doc.close()
-            parts.insert(0, gclient.pdf_part(sub, f"{slug}.pdf"))
-
-        log(f"   → review {slug} ({len(qs)} câu hỏi)...")
-        try:
-            res = reviewer.generate_json(parts, REVIEW_SCHEMA, tag="review")
-            res.setdefault("content_issues", [])
-            res.setdefault("question_issues", [])
-            res.setdefault("coverage_gaps", [])
-            n_high = sum(1 for x in res["question_issues"] + res["content_issues"]
-                         if x.get("severity") == "high")
-            log(f"     score {res.get('overall_score', '?')}/10, "
-                f"{n_high} lỗi nặng, {len(res['coverage_gaps'])} key point chưa phủ")
-        except Exception as e:
-            warn(f"{slug}: review lỗi ({e}) -> đánh dấu chưa review.")
-            res = {"error": str(e)}
-        results[slug] = res
-        yield results
+def review_one(row: dict, content_entry: dict, questions_list: list,
+               reviewer, with_pdf=None) -> dict:
+    """Review MỘT topic. with_pdf: (pdf_doc, gemini_client) nếu reviewer đọc PDF."""
+    slug = row["topic_slug"]
+    prompt = REVIEW_PROMPT.format(
+        level=row["level"], topic_title=row["topic_title"],
+        content=content_entry["content_markdown"],
+        key_points="\n".join(f"- {k}" for k in content_entry.get("key_points", [])),
+        questions=_fmt_questions(questions_list) if questions_list else "(chưa có câu hỏi)",
+        faithfulness_extra=FAITHFULNESS_EXTRA if with_pdf else "")
+    parts = [{"text": prompt}]
+    if with_pdf:
+        from stage_content import cut_pages
+        doc, gclient = with_pdf
+        sub = cut_pages(doc, row["page_start"], row["page_end"])
+        parts.insert(0, gclient.pdf_part(sub, f"{slug}.pdf"))
+    log(f"   [review  ] thẩm định {len(questions_list)} câu hỏi...")
+    try:
+        res = reviewer.generate_json(parts, REVIEW_SCHEMA, tag="review")
+        res.setdefault("content_issues", [])
+        res.setdefault("question_issues", [])
+        res.setdefault("coverage_gaps", [])
+        n_high = sum(1 for x in res["question_issues"] + res["content_issues"]
+                     if x.get("severity") == "high")
+        log(f"   [review  ] score {res.get('overall_score', '?')}/10, "
+            f"{n_high} lỗi nặng, {len(res['coverage_gaps'])} key point chưa phủ")
+        return res
+    except Exception as e:
+        warn(f"{slug}: review lỗi ({e}) -> đánh dấu chưa review.")
+        return {"error": str(e)}
 
 
 def apply_fixes(questions: dict, review: dict) -> tuple:
