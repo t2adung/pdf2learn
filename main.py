@@ -29,12 +29,33 @@ from pathlib import Path
 
 from utils import load_json, log, save_json, warn
 
+# Phiên bản shape của 03_content.json. v2 = Learning Object JSON
+# (objectives/sections/mindmap/...) thay cho blob content_markdown (v1).
+CONTENT_VERSION = 2
+
 
 def main():
     ap = argparse.ArgumentParser(description="PDF -> learning package (topics + MCQ)")
     ap.add_argument("pdf", type=Path, help="đường dẫn file PDF")
     ap.add_argument("--level", default="Lớp 6", help='giá trị cột level, vd "Lớp 6"')
     ap.add_argument("--model", default="gemini-2.5-flash")
+    ap.add_argument("--content-format", default="markdown",
+                    choices=["markdown", "json"],
+                    help="định dạng cột content trong topics.csv: markdown "
+                         "(render bằng code, mặc định) hoặc json (Learning Object thô). "
+                         "Đổi qua lại 0 token — chỉ cần chạy lại, cache giữ nguyên.")
+    ap.add_argument("--subject", default="",
+                    help='tên môn học ghi vào JSON bài học, vd "Lịch sử và Địa lí"')
+    ap.add_argument("--grade", default="",
+                    help='khối lớp ghi vào JSON (mặc định: tự rút số từ --level, "Lớp 6" -> "6")')
+    ap.add_argument("--export-json", action="store_true",
+                    help="ghi thêm output/json/{topic_slug}.json theo format đích "
+                         "(nhúng quiz, mindmap_mermaid) — 0 token, sinh từ cache")
+    ap.add_argument("--toc-file", type=Path, default=None,
+                    help="dùng file 01_toc.json dựng sẵn (vd từ build_toc.py) "
+                         "thay cho bookmark/AI — 0 token, chính xác 100%%")
+    ap.add_argument("--yes", action="store_true",
+                    help="bỏ bước xác nhận mục lục trước khi gọi AI")
     ap.add_argument("--interval", type=float, default=6.0,
                     help="giây giữa 2 request (free tier ~10 RPM -> 6s)")
     ap.add_argument("--dpi", type=int, default=0,
@@ -110,14 +131,49 @@ def main():
              "batch mới sẽ đánh số lại từ 01).")
 
     # ---- Stage 1: TOC ----
-    toc = load_json(caches[1])
+    if args.toc_file:
+        if not args.toc_file.exists():
+            sys.exit(f"--toc-file không tồn tại: {args.toc_file}")
+        _hint = ("\nSinh lại file này bằng một trong hai cách:\n"
+                 f"  python3 toc_from_images.py toc_images/<ten-sach> "
+                 f"--offset <N> --last-page <M> --json-out {args.toc_file}\n"
+                 f"  python3 build_toc.py <ten-sach>.toc.txt "
+                 f"--offset <N> --last-page <M> --out {args.toc_file}")
+        raw = args.toc_file.read_text(encoding="utf-8").strip()
+        if not raw:
+            sys.exit(f"--toc-file RỖNG (0 byte): {args.toc_file}"
+                     " — bước sinh TOC chưa chạy hoặc bị đứt giữa chừng." + _hint)
+        # Bẫy hay gặp: đưa nhầm toc.txt (output --out của toc_from_images /
+        # input của build_toc) vào --toc-file. Nhận diện theo chữ ký định dạng.
+        first = next((ln for ln in raw.splitlines()
+                      if ln.strip() and not ln.strip().startswith("#")), "")
+        if first.startswith("=") or (not raw.startswith("{") and "|" in first):
+            sys.exit(f"--toc-file đang là ĐỊNH DẠNG toc.txt (mục lục text), "
+                     f"chưa phải 01_toc.json: {args.toc_file}\n"
+                     f"Chuyển nó thành JSON bằng:\n"
+                     f"  python3 build_toc.py {args.toc_file} --offset <N> "
+                     f"--last-page <M> --out <duong-dan>/01_toc.json\n"
+                     f"(toc_from_images.py: cờ --out ghi toc.txt, "
+                     f"cờ --json-out mới ghi 01_toc.json)")
+        try:
+            import json as _json
+            toc = _json.loads(raw)
+        except Exception as e:
+            sys.exit(f"--toc-file không phải JSON hợp lệ: {args.toc_file} ({e})" + _hint)
+        if not isinstance(toc, dict) or not toc.get("modules"):
+            sys.exit(f"--toc-file thiếu key 'modules': {args.toc_file}"
+                     " — đây không phải file 01_toc.json do build_toc/toc_from_images sinh?" + _hint)
+        save_json(caches[1], toc)
+        log(f"── Stage 1/7: dùng TOC dựng sẵn từ {args.toc_file} (0 token) ──")
+    else:
+        toc = load_json(caches[1])
+        if toc is not None:
+            log("── Stage 1/7: dùng lại 01_toc.json ──")
     if toc is None:
         log("── Stage 1/7: Trích mục lục ──")
         from stage_toc import extract_toc
         toc = extract_toc(args.pdf, client, force_ai=args.force_ai_toc)
         save_json(caches[1], toc)
-    else:
-        log("── Stage 1/7: dùng lại 01_toc.json ──")
 
     # ---- Stage 2: Structure + slug ----
     structure = load_json(caches[2])
@@ -135,6 +191,30 @@ def main():
     if not structure:
         sys.exit("Không xác định được topic nào — kiểm tra lại PDF/mục lục.")
 
+    # ---- Guard 0 token: xác nhận mục lục TRƯỚC khi đốt quota AI ----
+    # Mục lục sai (offset lệch, AI đoán nhầm) là lỗi đắt nhất: mọi stage sau
+    # đều sinh từ page range này. Xem kỹ rồi hẵng Enter.
+    content_cached = load_json(caches[3], {}) or {}
+    if not args.yes and not args.dry_run and not content_cached:
+        n_topics = len(structure)
+        est = n_topics * (2 if args.no_validate else 3)
+        if not args.no_images:
+            est += n_topics
+        print(f"\n👀 Kiểm tra mục lục phía trên: {n_topics} topic, "
+              f"ước tính ~{est} request AI.")
+        print("   Sai page range? Ctrl+C, sửa work/01_toc.json (hoặc dùng "
+              "build_toc.py + --toc-file) rồi chạy lại.")
+        try:
+            input("   Enter để tiếp tục (hoặc dùng --yes để bỏ bước này)... ")
+        except EOFError:
+            sys.exit("Không có TTY để xác nhận — chạy với --yes trong môi trường "
+                     "không tương tác (Colab/CI).")
+
+    # ---- Guard phiên bản cache content (v1 markdown blob vs v2 LO JSON) ----
+    if content_cached and content_cached.get("_v") != CONTENT_VERSION:
+        sys.exit("Cache 03_content.json thuộc phiên bản cũ (markdown blob).\n"
+                 "Chạy lại với: --redo-from 3")
+
     # ---- Stage 3-6: TOPIC-MAJOR — xong trọn gói từng topic ----
     # (content -> images -> questions -> review cho topic N rồi mới sang N+1;
     #  hết quota giữa chừng vẫn có N topic HOÀN CHỈNH để export)
@@ -145,6 +225,7 @@ def main():
     from stage_questions import generate_questions_one
 
     content = load_json(caches[3], {}) or {}
+    content["_v"] = CONTENT_VERSION
     images = load_json(caches[4], {}) or {}
     questions = load_json(caches[5], {}) or {}
     review = load_json(caches[6], {}) or {}
@@ -220,7 +301,9 @@ def main():
         batch_dir = out_dir / f"batch-{n:02d}"
         export(structure, content, images, questions, batch_dir,
                pdf_name=args.pdf.name, model="mock" if args.dry_run else args.model,
-               only_slugs=set(new_slugs), label=f" [BATCH {n:02d} — {len(new_slugs)} topic MỚI]")
+               only_slugs=set(new_slugs), label=f" [BATCH {n:02d} — {len(new_slugs)} topic MỚI]",
+               content_format=args.content_format, subject=args.subject,
+               grade=args.grade, export_json=args.export_json)
         # copy ảnh của riêng lô này vào batch để test upload trọn gói
         b_img = batch_dir / "images"
         for s in new_slugs:
@@ -250,7 +333,8 @@ def main():
     export(structure, content, images, questions, out_dir,
            pdf_name=args.pdf.name, model="mock" if args.dry_run else args.model,
            only_slugs=set(completed), label=" [FULL — snapshot tích luỹ]",
-           extra_warnings=qc_warnings)
+           extra_warnings=qc_warnings, content_format=args.content_format,
+           subject=args.subject, grade=args.grade, export_json=args.export_json)
     if args.review and review:
         from stage_review import write_report
         write_report(review, structure, out_dir / "review_report.md")

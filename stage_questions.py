@@ -9,6 +9,7 @@ KHÔNG nhìn đáp án; câu nào giải ra khác correct_answer => loại (nghi
 """
 import json
 
+from render_markdown import content_markdown
 from utils import log, warn
 
 QUESTIONS_SCHEMA = {
@@ -93,9 +94,10 @@ def generate_questions_one(row: dict, content_entry: dict, client,
     slug = row["topic_slug"]
     kps = content_entry.get("key_points", [])
     log(f"   [question] {len(kps)} key points -> sinh câu hỏi...")
+    content_md = content_markdown(content_entry)
     prompt = QUESTIONS_PROMPT.format(
         level=row["level"], topic_title=row["topic_title"],
-        content=content_entry["content_markdown"],
+        content=content_md,
         key_points="\n".join(f"- {k}" for k in kps))
     res = client.generate_json([{"text": prompt}], QUESTIONS_SCHEMA,
                                tag="questions", temperature=0.5)
@@ -107,7 +109,7 @@ def generate_questions_one(row: dict, content_entry: dict, client,
     if validate and questions:
         log(f"   [validate] giải lại {len(questions)} câu để kiểm tra đáp án...")
         vp = VALIDATE_PROMPT.format(
-            content=content_entry["content_markdown"],
+            content=content_md,
             questions=_fmt_questions_for_validation(questions))
         try:
             vres = client.generate_json([{"text": vp}], VALIDATE_SCHEMA,

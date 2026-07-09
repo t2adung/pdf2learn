@@ -212,13 +212,53 @@ class MockGemini(Gemini):
                     {"title": "Bài 3. Sự đa dạng của chất", "page_start": 5, "page_end": 6},
                 ]},
             ]}
+        if tag == "toc_ocr":
+            return {"modules": [
+                {"title": "Chương I – Mở đầu (mock OCR)", "topics": [
+                    {"title": "Bài 1. Giới thiệu", "page": 6},
+                    {"title": "Bài 2. An toàn trong phòng thực hành", "page": 10},
+                ]},
+                {"title": "Chương II – Chất quanh ta (mock OCR)", "topics": [
+                    {"title": "Bài 3. Sự đa dạng của chất", "page": 20},
+                ]},
+            ]}
         if tag == "content":
             return {
-                "content_markdown": (
-                    "## Mục tiêu\n- Hiểu khái niệm cơ bản của bài học\n- Vận dụng vào ví dụ thực tế\n\n"
-                    "## Nội dung chính\nĐây là nội dung tóm tắt (mock) được sinh từ các trang PDF của topic.\n\n"
-                    "## Liên hệ thực tế\nVí dụ đời sống minh hoạ khái niệm.\n\n"
-                    "## Ghi nhớ\n- Ý chính 1\n- Ý chính 2\n- Ý chính 3"),
+                "objectives": [
+                    "Nêu được khái niệm X và vai trò của nó",
+                    "Giải thích được vì sao X quan trọng trong đời sống",
+                ],
+                "hook": "Vì sao mỗi ngày em đều gặp X mà chưa bao giờ để ý tới nó?",
+                "key_terms": [
+                    {"term": "Khái niệm X", "definition": "Định nghĩa ngắn gọn của X (mock).",
+                     "example": "Ví dụ đời thường về X."},
+                    # BẪY có chủ đích: dấu | và xuống dòng, để --dry-run kiểm tra
+                    # hàm _cell() trong render_markdown.py có thoát ký tự đúng không.
+                    {"term": "Tính chất Y | Z", "definition": "Phân biệt\nY với Z (mock).",
+                     "example": "So sánh Y | Z trong thực tế."},
+                ],
+                "sections": [
+                    {"heading": "X là gì?", "icon_hint": "🔎",
+                     "points": ["Ý chính thứ nhất về X (mock).",
+                                "Ý chính thứ hai, bổ sung cho ý trên."]},
+                    {"heading": "Vì sao X quan trọng?", "icon_hint": "🌍",
+                     "points": ["Lý do thứ nhất (mock).",
+                                "Lý do thứ hai, gắn với đời sống."]},
+                ],
+                "mindmap": {
+                    "root": "Khái niệm X",
+                    "branches": [
+                        {"label": "Đặc điểm", "children": ["Đặc điểm 1", "Đặc điểm 2"]},
+                        {"label": "Phân loại", "children": ["Loại A", "Loại B"]},
+                        {"label": "Ứng dụng", "children": ["Trong đời sống", "Trong kỹ thuật"]},
+                    ],
+                },
+                "real_life": ["Ví dụ đời sống minh hoạ khái niệm X (mock)."],
+                "memory_hooks": ["Nhớ X bằng ba chữ Đ: Đặc điểm - Định nghĩa - Đời sống."],
+                "misconceptions": [
+                    {"wrong": "Nhiều bạn nghĩ X và Y là một (mock).",
+                     "correct": "Thực ra X khác Y ở tính chất cốt lõi."},
+                ],
                 "key_points": [
                     "Khái niệm X là nền tảng của chủ đề",
                     "Tính chất Y phân biệt X với Z",

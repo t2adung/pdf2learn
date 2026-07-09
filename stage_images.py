@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-"""Stage 4: Hình minh hoạ.
+"""Stage 4 (v2): Hình minh hoạ.
 
 Thứ tự ưu tiên (chính xác kiến thức là trên hết):
 1. Trích ảnh gốc từ chính các trang PDF của topic (PyMuPDF) -> AI vision lọc bỏ
    logo/trang trí, giữ ảnh có giá trị minh hoạ, kèm caption.
-2. Nếu topic không có ảnh dùng được -> AI sinh SVG diagram từ key_points (fallback).
+2. Nếu topic không có ảnh dùng được -> vẽ SƠ ĐỒ TƯ DUY bằng CODE từ field
+   `mindmap` trong Learning Object (mindmap_svg.to_svg — 0 token, không bao giờ
+   lỗi cú pháp). v1 từng nhờ AI sinh SVG: -1 request/topic, và hết rủi ro SVG hỏng.
 
 Naming convention (deterministic, sinh bằng code): {topic_slug}_{nn}.{ext}
 """
-import re
-from typing import Optional
-
 import fitz
 
+from mindmap_svg import to_svg, _validate
 from utils import log, warn
 
 MIN_DIM = 160          # bỏ ảnh quá nhỏ (icon, bullet trang trí)
@@ -39,17 +39,6 @@ Chọn những ảnh CÓ GIÁ TRỊ MINH HOẠ KIẾN THỨC (sơ đồ, biểu 
 LOẠI BỎ: logo, hoạ tiết trang trí, ảnh nền, icon, ảnh mờ/vô nghĩa.
 Với mỗi ảnh giữ lại, viết caption ngắn gọn bằng ngôn ngữ của bài học (index tính từ 0 theo thứ tự ảnh đính kèm).
 Nếu không ảnh nào đáng giữ, trả về keep = []."""
-
-SVG_PROMPT = """Vẽ MỘT sơ đồ SVG minh hoạ trực quan cho bài học "{topic_title}" (trình độ {level}),
-dựa trên các ý chính sau:
-{key_points}
-
-Yêu cầu:
-- Trả về DUY NHẤT mã SVG hợp lệ (bắt đầu bằng <svg, kết thúc bằng </svg>), không giải thích, không markdown.
-- Kích thước khoảng 640x400, chữ dùng font-family sans-serif, cỡ chữ >= 13 để dễ đọc.
-- Nội dung chữ trong sơ đồ dùng ngôn ngữ của các ý chính ở trên.
-- Ưu tiên dạng: sơ đồ khối, sơ đồ phân loại, chu trình, hoặc timeline — chọn dạng phù hợp nội dung.
-- Màu sắc nhẹ nhàng, tương phản tốt, phù hợp tài liệu học tập."""
 
 
 def _extract_candidates(doc: fitz.Document, page_start: int, page_end: int) -> list:
@@ -85,50 +74,55 @@ def _extract_candidates(doc: fitz.Document, page_start: int, page_end: int) -> l
     return out
 
 
-def _gen_svg(client, row: dict, key_points: list) -> Optional[str]:
-    prompt = SVG_PROMPT.format(topic_title=row["topic_title"], level=row["level"],
-                               key_points="\n".join(f"- {k}" for k in key_points[:8]))
-    text = client.generate_text([{"text": prompt}], tag="svg_diagram", temperature=0.5)
-    m = re.search(r"<svg[\s\S]*?</svg>", text)
-    return m.group(0) if m else None
+def _mindmap_svg(row: dict, content_entry: dict, images_dir, seq: int):
+    """Vẽ mindmap từ Learning Object bằng code. Trả về entry ảnh hoặc None. 0 token."""
+    mm = (content_entry or {}).get("mindmap")
+    if not mm:
+        return None
+    warns = _validate(mm)
+    for w in warns:
+        warn(f"{row['topic_slug']}: {w}")
+    if any(w.startswith("mindmap: thiếu") for w in warns):
+        return None
+    try:
+        svg = to_svg(mm, row["topic_title"])
+    except Exception as e:
+        warn(f"{row['topic_slug']}: vẽ mindmap lỗi ({e}), topic không có hình.")
+        return None
+    fname = f"{row['topic_slug']}_{seq:02d}.svg"
+    (images_dir / fname).write_text(svg, encoding="utf-8")
+    return {"file": fname, "caption": f"Sơ đồ tư duy: {row['topic_title']}",
+            "source": "code_mindmap"}
 
 
 def generate_images_one(doc, row: dict, content_entry: dict, client, images_dir) -> list:
     """Sinh danh sách ảnh cho MỘT topic."""
     images_dir.mkdir(parents=True, exist_ok=True)
     slug = row["topic_slug"]
-    if True:
-        cands = _extract_candidates(doc, row["page_start"], row["page_end"])
-        kept = []
-        if cands:
-            log(f"   [images ] {len(cands)} ảnh ứng viên, nhờ AI lọc...")
-            parts = [{"text": FILTER_PROMPT.format(topic_title=row["topic_title"])}]
-            for c in cands:
-                parts.append(client.image_part(c["data"], c["mime"]))
-            try:
-                res = client.generate_json(parts, FILTER_SCHEMA, tag="img_filter")
-                for k in res.get("keep", []):
-                    i = k["index"]
-                    if 0 <= i < len(cands):
-                        c = cands[i]
-                        fname = f"{slug}_{len(kept)+1:02d}.{c['ext']}"
-                        (images_dir / fname).write_bytes(c["data"])
-                        kept.append({"file": fname, "caption": k["caption"],
-                                     "source": f"pdf_page_{c['page']}"})
-            except Exception as e:
-                warn(f"{slug}: lọc ảnh lỗi ({e}), bỏ qua ảnh PDF.")
+    cands = _extract_candidates(doc, row["page_start"], row["page_end"])
+    kept = []
+    if cands:
+        log(f"   [images ] {len(cands)} ảnh ứng viên, nhờ AI lọc...")
+        parts = [{"text": FILTER_PROMPT.format(topic_title=row["topic_title"])}]
+        for c in cands:
+            parts.append(client.image_part(c["data"], c["mime"]))
+        try:
+            res = client.generate_json(parts, FILTER_SCHEMA, tag="img_filter")
+            for k in res.get("keep", []):
+                i = k["index"]
+                if 0 <= i < len(cands):
+                    c = cands[i]
+                    fname = f"{slug}_{len(kept)+1:02d}.{c['ext']}"
+                    (images_dir / fname).write_bytes(c["data"])
+                    kept.append({"file": fname, "caption": k["caption"],
+                                 "source": f"pdf_page_{c['page']}"})
+        except Exception as e:
+            warn(f"{slug}: lọc ảnh lỗi ({e}), bỏ qua ảnh PDF.")
+    # Mindmap luôn được vẽ THÊM (0 token) — kể cả khi đã có ảnh gốc,
+    # vì sơ đồ tư duy tóm tắt bài có giá trị ôn tập riêng.
+    mm_entry = _mindmap_svg(row, content_entry, images_dir, seq=len(kept) + 1)
+    if mm_entry:
         if not kept:
-            kps = (content_entry or {}).get("key_points", [])
-            if kps:
-                log(f"   [images ] không có ảnh gốc dùng được, sinh SVG diagram...")
-                try:
-                    svg = _gen_svg(client, row, kps)
-                    if svg:
-                        fname = f"{slug}_01.svg"
-                        (images_dir / fname).write_text(svg, encoding="utf-8")
-                        kept.append({"file": fname,
-                                     "caption": f"Sơ đồ tóm tắt: {row['topic_title']}",
-                                     "source": "ai_svg"})
-                except Exception as e:
-                    warn(f"{slug}: sinh SVG lỗi ({e}), topic không có hình.")
-        return kept
+            log("   [images ] không có ảnh gốc dùng được, vẽ mindmap bằng code (0 token).")
+        kept.append(mm_entry)
+    return kept

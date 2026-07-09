@@ -1,0 +1,10 @@
+# Sinh tự động từ ảnh: hinh1.png
+# KIỂM TRA KỸ tên bài + số trang so với ảnh gốc trước khi chạy build_toc.py!
+# Định dạng: '= Tên module' / 'Tên bài | số trang IN'. Dòng # bị bỏ qua.
+
+= Chương I – Mở đầu (mock OCR)
+Bài 1. Giới thiệu | 6
+Bài 2. An toàn trong phòng thực hành | 10
+
+= Chương II – Chất quanh ta (mock OCR)
+Bài 3. Sự đa dạng của chất | 20

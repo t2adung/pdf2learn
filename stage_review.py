@@ -14,6 +14,7 @@ dùng hoặc cờ --review-fix (chỉ tự loại câu hỏi severity=high).
 Reviewer "gemini-pro" là chế độ duy nhất được đính kèm trang PDF nguồn
 => kiểm tra thêm faithfulness (nội dung có trung thực với sách gốc không).
 """
+from render_markdown import content_markdown
 from utils import log, warn
 
 REVIEW_SCHEMA = {
@@ -94,7 +95,7 @@ def review_one(row: dict, content_entry: dict, questions_list: list,
     slug = row["topic_slug"]
     prompt = REVIEW_PROMPT.format(
         level=row["level"], topic_title=row["topic_title"],
-        content=content_entry["content_markdown"],
+        content=content_markdown(content_entry),
         key_points="\n".join(f"- {k}" for k in content_entry.get("key_points", [])),
         questions=_fmt_questions(questions_list) if questions_list else "(chưa có câu hỏi)",
         faithfulness_extra=FAITHFULNESS_EXTRA if with_pdf else "")
