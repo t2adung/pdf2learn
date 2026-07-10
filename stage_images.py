@@ -95,34 +95,44 @@ def _mindmap_svg(row: dict, content_entry: dict, images_dir, seq: int):
             "source": "code_mindmap"}
 
 
-def generate_images_one(doc, row: dict, content_entry: dict, client, images_dir) -> list:
-    """Sinh danh sách ảnh cho MỘT topic."""
+def generate_images_one(doc, row: dict, content_entry: dict, client, images_dir,
+                        book_images: bool = False) -> list:
+    """Sinh danh sách ảnh cho MỘT topic.
+
+    book_images=False (MẶC ĐỊNH): chỉ vẽ mindmap SVG bằng code (0 token),
+      KHÔNG trích + KHÔNG gọi AI lọc ảnh trang sách. Ảnh scan từ SGK thường
+      là ảnh chụp cả trang, ít giá trị trên giao diện học -> bỏ cho gọn,
+      và tiết kiệm luôn 1 request img_filter/topic.
+    book_images=True: bật lại việc trích ảnh gốc + AI lọc (hành vi cũ)."""
     images_dir.mkdir(parents=True, exist_ok=True)
     slug = row["topic_slug"]
-    cands = _extract_candidates(doc, row["page_start"], row["page_end"])
     kept = []
-    if cands:
-        log(f"   [images ] {len(cands)} ảnh ứng viên, nhờ AI lọc...")
-        parts = [{"text": FILTER_PROMPT.format(topic_title=row["topic_title"])}]
-        for c in cands:
-            parts.append(client.image_part(c["data"], c["mime"]))
-        try:
-            res = client.generate_json(parts, FILTER_SCHEMA, tag="img_filter")
-            for k in res.get("keep", []):
-                i = k["index"]
-                if 0 <= i < len(cands):
-                    c = cands[i]
-                    fname = f"{slug}_{len(kept)+1:02d}.{c['ext']}"
-                    (images_dir / fname).write_bytes(c["data"])
-                    kept.append({"file": fname, "caption": k["caption"],
-                                 "source": f"pdf_page_{c['page']}"})
-        except Exception as e:
-            warn(f"{slug}: lọc ảnh lỗi ({e}), bỏ qua ảnh PDF.")
+    if book_images:
+        cands = _extract_candidates(doc, row["page_start"], row["page_end"])
+        if cands:
+            log(f"   [images ] {len(cands)} ảnh ứng viên, nhờ AI lọc...")
+            parts = [{"text": FILTER_PROMPT.format(topic_title=row["topic_title"])}]
+            for c in cands:
+                parts.append(client.image_part(c["data"], c["mime"]))
+            try:
+                res = client.generate_json(parts, FILTER_SCHEMA, tag="img_filter")
+                for k in res.get("keep", []):
+                    i = k["index"]
+                    if 0 <= i < len(cands):
+                        c = cands[i]
+                        fname = f"{slug}_{len(kept)+1:02d}.{c['ext']}"
+                        (images_dir / fname).write_bytes(c["data"])
+                        kept.append({"file": fname, "caption": k["caption"],
+                                     "source": f"pdf_page_{c['page']}"})
+            except Exception as e:
+                warn(f"{slug}: lọc ảnh lỗi ({e}), bỏ qua ảnh PDF.")
     # Mindmap luôn được vẽ THÊM (0 token) — kể cả khi đã có ảnh gốc,
     # vì sơ đồ tư duy tóm tắt bài có giá trị ôn tập riêng.
     mm_entry = _mindmap_svg(row, content_entry, images_dir, seq=len(kept) + 1)
     if mm_entry:
         if not kept:
-            log("   [images ] không có ảnh gốc dùng được, vẽ mindmap bằng code (0 token).")
+            reason = ("chỉ dùng mindmap SVG (mặc định)" if not book_images
+                      else "không có ảnh gốc dùng được, vẽ mindmap")
+            log(f"   [images ] {reason} bằng code (0 token).")
         kept.append(mm_entry)
     return kept

@@ -29,7 +29,7 @@ MIN_QUESTIONS = 3
 
 def _compose_content(row: dict, entry: dict, images: list, questions: list,
                      content_format: str = "markdown",
-                     subject: str = "", grade: str = "") -> str:
+                     subject: str = "", grade: str = "", density: str = "full") -> str:
     """Sinh giá trị cột `content` từ Learning Object (hoặc blob v1).
 
     content_format:
@@ -50,13 +50,14 @@ def _compose_content(row: dict, entry: dict, images: list, questions: list,
         for img in images:
             lines.append("![{}]({})".format(img["caption"], img["file"]))
         return md.rstrip() + "\n" + "\n".join(lines)
-    return render(entry or {}, images=images)
+    return render(entry or {}, images=images, density=density)
 
 
 def export(structure: list, content: dict, images: dict, questions: dict,
            out_dir, pdf_name: str, model: str, only_slugs=None, label="",
            extra_warnings=None, content_format: str = "markdown",
-           subject: str = "", grade: str = "", export_json: bool = False):
+           subject: str = "", grade: str = "", export_json: bool = False,
+           density: str = "full"):
     """only_slugs: nếu khác None, chỉ xuất các topic trong tập này (batch/delta export).
     content_format: "markdown" (mặc định) | "json" — xem _compose_content.
     export_json: ghi thêm json/{topic_slug}.json (format đích, pretty) cho mỗi topic."""
@@ -85,7 +86,8 @@ def export(structure: list, content: dict, images: dict, questions: dict,
                                             images.get(slug, []),
                                             questions.get(slug, []),
                                             content_format=content_format,
-                                            subject=subject, grade=grade),
+                                            subject=subject, grade=grade,
+                                            density=density),
             })
             if export_json:
                 lo = compose_learning_object(row, content.get(slug, {}),

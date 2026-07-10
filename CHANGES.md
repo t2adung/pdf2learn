@@ -77,6 +77,59 @@ Kiểm tra nhanh key đã vào chưa: `python3 -c "import os; print(bool(os.envi
 
 ---
 
+## Cập nhật 5: chỉ giữ mindmap SVG + hậu xử lý CSV có sẵn
+
+Ảnh trang sách (.jpg trích từ PDF) ít giá trị trên giao diện học và làm bài dài.
+Từ nay MẶC ĐỊNH chỉ giữ mindmap SVG (code vẽ, 0 token).
+
+- stage_images.py: thêm tham số book_images (mặc định False). Tắt = không trích
+  ảnh PDF, không gọi img_filter => tiết kiệm 1 request/topic. Bật lại bằng
+  cờ main.py --book-images nếu khoá cần ảnh gốc.
+- condense_csv.py (MỚI): hậu xử lý topics.csv ĐÃ XUẤT (0 token).
+    python3 condense_csv.py topics.csv --out topics.clean.csv          # bỏ ảnh .jpg, giữ .svg
+    python3 condense_csv.py topics.csv --out topics.clean.csv --trim   # + bỏ bullet trùng, cap 4/mục
+  --trim chỉ BỎ NGUYÊN bullet trùng/dư, KHÔNG cắt cụt giữa câu => không sai ý.
+
+Đo trên topics.csv thật (55 bài): bỏ 184 ảnh trang sách, giữ 55 SVG.
+Rút gọn text bằng code chỉ giảm 3-6% (phần dài là câu dài dòng, không phải
+bullet trùng) — muốn giảm ~60% như viết tay phải --redo-from 3 (prompt v2).
+
+Khoá SAU chạy sạch từ đầu, 0 xử lý thêm:
+    python3 main.py sach.pdf --toc-file work/01_toc.json --redo-from 3
+    # content ngắn (prompt v2) + chỉ SVG (mặc định) tự động.
+
+---
+
+## Cập nhật 4: giảm độ dài content (bài học ngắn gọn hơn)
+
+Đo thực tế topics.csv (55 bài): median 1043 từ (~8 phút đọc), dài nhất 1273 từ
+— GẤP ĐÔI mức hợp lý cho learning object lớp 6 (~500 từ / 4 phút). Thủ phạm:
+"Nội dung chính" + "Từ khoá" chiếm ~60% chữ, point phình 36-54 từ (2-3 dòng)
+do prompt cũ bảo "tóm tắt CHI TIẾT".
+
+Hai lớp giải pháp:
+
+A) PROMPT (root-cause, cần --redo-from 3): CONTENT_PROMPT thêm QUY TẮC ĐỘ DÀI —
+   point <= 20 từ, sections <= ~350 từ, 2-4 mục, mỗi mục 2-4 point. key_points
+   KHÔNG bị giới hạn (dữ liệu nội bộ). Đây là cách cho câu ngắn mà vẫn TRỌN ý.
+
+B) RENDER density (0 token, dùng ngay không sinh lại): cờ --density
+     full    : như cũ
+     compact : 3 point/mục, cắt point dài còn 22 từ, bỏ ví dụ key_terms
+     minimal : chỉ Mục tiêu + Nội dung chính (2 point/18 từ) + Mindmap
+   Đo trên 1 bài: full 791 từ -> minimal 218 từ (~1.7 phút).
+   CẢNH BÁO: density cắt bằng code (chặt cụt câu + "…"), tốt để xem nhanh /
+   ôn tập, KHÔNG thay được việc AI viết lại gọn (Hướng A) cho bản phát hành.
+
+Khuyến nghị: chạy 1-2 bài với prompt mới (--redo-from 3) xem độ dài đã ổn chưa;
+đồng thời để bibeli render --density minimal cho chế độ "xem nhanh", full cho
+"đọc kỹ" — cùng một cache, 0 token.
+
+Gợi ý trực quan thêm (phía bibeli, không thuộc pipeline): đưa Liên hệ/Dễ nhầm/
+Mẹo nhớ vào khối gập (progressive disclosure); bỏ bớt emoji header cho đỡ rối.
+
+---
+
 ## Cập nhật 3: toc_from_images.py — OCR ảnh chụp trang mục lục (mới)
 
 Quy trình: `toc_images/ten-sach/hinh*.png` → 1 request AI OCR → `toc.txt`

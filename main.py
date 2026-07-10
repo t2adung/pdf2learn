@@ -39,6 +39,11 @@ def main():
     ap.add_argument("pdf", type=Path, help="đường dẫn file PDF")
     ap.add_argument("--level", default="Lớp 6", help='giá trị cột level, vd "Lớp 6"')
     ap.add_argument("--model", default="gemini-2.5-flash")
+    ap.add_argument("--density", default="full",
+                    choices=["full", "compact", "minimal"],
+                    help="mật độ chữ cột content (markdown): full (đủ) | compact "
+                         "(3 point/mục, cắt point dài) | minimal (chỉ mục tiêu + nội "
+                         "dung chính + mindmap). Đổi mức 0 token — chỉ re-render.")
     ap.add_argument("--content-format", default="markdown",
                     choices=["markdown", "json"],
                     help="định dạng cột content trong topics.csv: markdown "
@@ -69,6 +74,9 @@ def main():
                     help="sinh content + câu hỏi trong 1 request/topic "
                          "(tiết kiệm ~50% request stage 3+5; xem README về trade-off)")
     ap.add_argument("--no-images", action="store_true", help="bỏ qua stage 4")
+    ap.add_argument("--book-images", action="store_true",
+                    help="nhúng THÊM ảnh trích từ trang PDF (AI lọc, +1 request/topic). "
+                         "Mặc định TẮT: chỉ giữ mindmap SVG do code vẽ (0 token, gọn giao diện).")
     ap.add_argument("--no-validate", action="store_true",
                     help="bỏ qua pass kiểm chứng đáp án ở stage 5")
     ap.add_argument("--review", action="store_true",
@@ -254,7 +262,8 @@ def main():
                 save_json(caches[3], content)
             if not args.no_images and slug not in images:
                 images[slug] = generate_images_one(doc, row, content[slug],
-                                                   client, images_dir)
+                                                   client, images_dir,
+                                                   book_images=args.book_images)
                 save_json(caches[4], images)
             if slug not in questions:
                 qs, dropped = generate_questions_one(row, content[slug], client,
@@ -303,7 +312,7 @@ def main():
                pdf_name=args.pdf.name, model="mock" if args.dry_run else args.model,
                only_slugs=set(new_slugs), label=f" [BATCH {n:02d} — {len(new_slugs)} topic MỚI]",
                content_format=args.content_format, subject=args.subject,
-               grade=args.grade, export_json=args.export_json)
+               grade=args.grade, export_json=args.export_json, density=args.density)
         # copy ảnh của riêng lô này vào batch để test upload trọn gói
         b_img = batch_dir / "images"
         for s in new_slugs:
@@ -334,7 +343,8 @@ def main():
            pdf_name=args.pdf.name, model="mock" if args.dry_run else args.model,
            only_slugs=set(completed), label=" [FULL — snapshot tích luỹ]",
            extra_warnings=qc_warnings, content_format=args.content_format,
-           subject=args.subject, grade=args.grade, export_json=args.export_json)
+           subject=args.subject, grade=args.grade, export_json=args.export_json,
+           density=args.density)
     if args.review and review:
         from stage_review import write_report
         write_report(review, structure, out_dir / "review_report.md")
