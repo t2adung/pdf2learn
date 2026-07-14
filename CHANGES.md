@@ -77,6 +77,25 @@ Kiểm tra nhanh key đã vào chưa: `python3 -c "import os; print(bool(os.envi
 
 ---
 
+## Cập nhật 6: toc_from_images.py nhận thẳng FILE PDF trang mục lục (mới)
+
+Nguồn mục lục giờ nhận diện theo đuôi file, không bắt buộc phải chụp ảnh trước:
+`toc_from_images.py` chấp nhận **1 file `.pdf`** (mỗi trang được render thành ảnh
+rồi OCR), **1 file ảnh**, hoặc **1 thư mục** chứa lẫn lộn ảnh + PDF. Trang PDF
+được phóng để bề ngang ≈ 1600px (có trần chống upscale) nên số trang in vẫn nét.
+Dùng khi bạn đã có sẵn PDF mục lục (vd tách từ chính cuốn sách) — khỏi phải chụp tay.
+
+```bash
+# thẳng từ 1 file PDF mục lục -> 01_toc.json:
+python3 toc_from_images.py toc_images/khtn-lop7.pdf --offset 1 --last-page 197 \
+    --json-out runs/khtn-lop7/work/01_toc.json
+# vẫn giữ nguyên đường cũ: thư mục ảnh chụp
+python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
+```
+(Đặt file PDF mục lục của bạn vào `toc_images/`, vd `toc_images/khtn-lop7.pdf`.)
+
+---
+
 ## Cập nhật 5: chỉ giữ mindmap SVG + hậu xử lý CSV có sẵn
 
 Ảnh trang sách (.jpg trích từ PDF) ít giá trị trên giao diện học và làm bài dài.
@@ -137,6 +156,7 @@ Quy trình: `toc_images/ten-sach/hinh*.png` → 1 request AI OCR → `toc.txt`
 → `main.py --toc-file`. Ảnh sort theo natural order (hinh1, hinh2, hinh10);
 ảnh > 1600px tự shrink trước khi gửi để giảm token; `--json-out` gộp 2 bước
 khi đã biết `--offset`/`--last-page`. Mock tag `toc_ocr` cho `--dry-run`.
+(Cập nhật 6 mở rộng nguồn nhận vào cho cả file PDF, không chỉ ảnh.)
 
 ```bash
 python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt   # duyệt tay

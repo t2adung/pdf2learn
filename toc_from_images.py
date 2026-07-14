@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-toc_from_images.py — Đọc ẢNH CHỤP trang mục lục -> toc.txt (định dạng build_toc.py).
+toc_from_images.py — Đọc ẢNH CHỤP hoặc FILE PDF trang mục lục -> toc.txt
+(định dạng build_toc.py).
+
+Nguồn mục lục có thể là (nhận diện theo đuôi file):
+    • thư mục chứa ảnh:   toc_images/ten-sach/hinh1.png, hinh2.png...
+    • thư mục chứa PDF:   toc_images/ten-sach/muc-luc.pdf  (mỗi trang -> 1 ảnh)
+    • thẳng 1 file PDF:   toc_images/ten-sach.pdf
+    • thẳng 1 file ảnh:   muc-luc.png
+Với PDF, mỗi trang được render thành ảnh rồi OCR — không cần chụp tay.
 
 Vị trí trong quy trình:
-    toc_images/ten-sach/hinh1.png, hinh2.png...
-        └─(1 request AI OCR — rẻ: chỉ vài ảnh, không phải cả cuốn PDF)
+    ảnh/pdf trang mục lục
+        └─(1 request AI OCR — rẻ: chỉ vài trang, không phải cả cuốn PDF)
             └─ toc.txt  ←— BẠN MỞ RA KIỂM TRA / SỬA TAY (guard 0 token)
                 └─ build_toc.py (thuần code) -> 01_toc.json
                     └─ main.py sach.pdf --toc-file 01_toc.json
@@ -15,8 +23,9 @@ việc tính page_end, áp offset, kiểm tra thứ tự trang vẫn là code
 deterministic trong build_toc.py — sai ở đâu sửa toc.txt ở đó, không tốn token.
 
 CHẠY:
-    # Bước 1 — OCR ảnh -> toc.txt rồi tự kiểm tra:
+    # Bước 1 — OCR ảnh/PDF -> toc.txt rồi tự kiểm tra:
     python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
+    python3 toc_from_images.py toc_images/ten-sach.pdf --out ten-sach.toc.txt
 
     # Bước 2 — dựng 01_toc.json (xem cách tính --offset trong build_toc.py):
     python3 build_toc.py ten-sach.toc.txt --offset 2 --last-page 197 \
@@ -24,6 +33,8 @@ CHẠY:
 
     # Hoặc GỘP 2 bước (khi đã tin kết quả OCR + biết offset):
     python3 toc_from_images.py toc_images/ten-sach --offset 2 --last-page 197 \
+        --json-out runs/ten-sach/work/01_toc.json
+    python3 toc_from_images.py toc_images/ten-sach.pdf --offset 1 --last-page 197 \
         --json-out runs/ten-sach/work/01_toc.json
 
     # Test không cần API key:
@@ -41,7 +52,9 @@ from build_toc import build, parse_toc_text
 from utils import log, save_json, warn
 
 IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
+PDF_EXT = ".pdf"
 MAX_WIDTH = 1600   # ảnh chụp điện thoại 4000px -> shrink để giảm token, vẫn thừa nét để OCR
+PDF_ZOOM_CAP = 4.0  # trần phóng to trang PDF nhỏ (tránh upscale quá đà)
 
 TOC_OCR_SCHEMA = {
     "type": "object",
@@ -86,22 +99,59 @@ def _natural_key(p: Path):
             for t in re.split(r"(\d+)", p.name)]
 
 
-def _load_images(folder: Path) -> list:
-    files = sorted((f for f in folder.iterdir()
-                    if f.suffix.lower() in IMG_EXTS), key=_natural_key)
-    if not files:
-        sys.exit(f"Không thấy ảnh nào trong {folder} (hỗ trợ: {', '.join(sorted(IMG_EXTS))})")
+def _pix_to_part(pix, name: str) -> dict:
+    """Pixmap -> {name, data(jpeg)} — shrink cho nhẹ token, vẫn đủ nét OCR."""
+    if pix.alpha:                         # JPEG không nhận alpha
+        pix = fitz.Pixmap(pix, 0)
+    n_shrink = 0
+    while pix.width > MAX_WIDTH * (2 ** n_shrink):
+        n_shrink += 1
+    if n_shrink:
+        pix.shrink(n_shrink)              # halve n lần — giảm token, đủ nét OCR
+    return {"name": name, "data": pix.tobytes("jpeg", jpg_quality=85)}
+
+
+def _render_pdf(path: Path) -> list:
+    """Render mỗi trang PDF mục lục thành 1 ảnh JPEG (không cần chụp tay)."""
     out = []
-    for f in files:
-        pix = fitz.Pixmap(str(f))
-        if pix.alpha:                     # JPEG không nhận alpha
-            pix = fitz.Pixmap(pix, 0)
-        n_shrink = 0
-        while pix.width > MAX_WIDTH * (2 ** n_shrink):
-            n_shrink += 1
-        if n_shrink:
-            pix.shrink(n_shrink)          # halve n lần — giảm token, đủ nét OCR
-        out.append({"name": f.name, "data": pix.tobytes("jpeg", jpg_quality=85)})
+    with fitz.open(str(path)) as doc:
+        if doc.page_count == 0:
+            sys.exit(f"PDF rỗng: {path}")
+        for i, page in enumerate(doc, 1):
+            w = page.rect.width or 0
+            # phóng để bề ngang ≈ MAX_WIDTH cho nét chữ + số trang, có trần chống upscale.
+            zoom = min(MAX_WIDTH / w, PDF_ZOOM_CAP) if w else 2.0
+            zoom = max(zoom, 1.0)
+            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+            out.append(_pix_to_part(pix, f"{path.stem} tr.{i}"))
+    return out
+
+
+def _gather_sources(source: Path) -> list:
+    """Danh sách file ảnh/PDF (theo thứ tự tự nhiên) từ 1 thư mục hoặc 1 file."""
+    if source.is_file():
+        ext = source.suffix.lower()
+        if ext == PDF_EXT or ext in IMG_EXTS:
+            return [source]
+        sys.exit(f"File không hỗ trợ: {source} "
+                 f"(cần {PDF_EXT} hoặc ảnh {', '.join(sorted(IMG_EXTS))}).")
+    files = sorted((f for f in source.iterdir()
+                    if f.suffix.lower() in IMG_EXTS or f.suffix.lower() == PDF_EXT),
+                   key=_natural_key)
+    if not files:
+        sys.exit(f"Không thấy ảnh/PDF nào trong {source} "
+                 f"(hỗ trợ: {PDF_EXT}, {', '.join(sorted(IMG_EXTS))})")
+    return files
+
+
+def _load_images(source: Path) -> list:
+    """Nạp nguồn mục lục (thư mục ảnh/PDF hoặc 1 file) -> list ảnh JPEG cho OCR."""
+    out = []
+    for f in _gather_sources(source):
+        if f.suffix.lower() == PDF_EXT:
+            out.extend(_render_pdf(f))    # 1 PDF -> nhiều trang
+        else:
+            out.append(_pix_to_part(fitz.Pixmap(str(f)), f.name))
     return out
 
 
@@ -120,9 +170,10 @@ def _to_toc_txt(result: dict, source_names: list) -> str:
 
 def main():
     ap = argparse.ArgumentParser(
-        description="OCR ảnh chụp trang mục lục -> toc.txt (hoặc thẳng 01_toc.json).")
+        description="OCR ảnh/PDF trang mục lục -> toc.txt (hoặc thẳng 01_toc.json).")
     ap.add_argument("images_dir", type=Path,
-                    help="thư mục chứa ảnh mục lục, vd toc_images/ten-sach")
+                    help="nguồn mục lục: thư mục ảnh/PDF, 1 file .pdf, hoặc 1 file ảnh "
+                         "(vd toc_images/ten-sach hoặc toc_images/ten-sach.pdf)")
     ap.add_argument("--out", type=Path, default=None,
                     help="nơi ghi toc.txt (mặc định: <images_dir>.toc.txt)")
     ap.add_argument("--offset", type=int, default=None,
@@ -137,8 +188,8 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="MockGemini, không cần API key")
     args = ap.parse_args()
 
-    if not args.images_dir.is_dir():
-        sys.exit(f"Không tìm thấy thư mục: {args.images_dir}")
+    if not args.images_dir.exists():
+        sys.exit(f"Không tìm thấy nguồn mục lục: {args.images_dir}")
     if args.json_out and (args.offset is None or args.last_page is None):
         sys.exit("--json-out cần cả --offset và --last-page (xem docstring build_toc.py).")
 
