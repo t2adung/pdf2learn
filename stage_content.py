@@ -28,7 +28,12 @@ Soạn bài học bằng NGÔN NGỮ CỦA TÀI LIỆU GỐC, định dạng Mar
 (2-4 gạch đầu dòng: học xong bài này người học làm được gì)
 
 ## Nội dung chính
-(Tóm tắt CHI TIẾT và DỄ HIỂU. CHỈ dùng thông tin có trong tài liệu đính kèm — tuyệt đối không bịa thêm số liệu/định nghĩa. Giải thích thuật ngữ khó ngay khi xuất hiện. Dùng heading phụ ###, bảng, danh sách khi phù hợp.)
+(Tóm tắt ĐẦY ĐỦ Ý nhưng NGẮN GỌN, DỄ QUÉT MẮT — bài học này luôn đi kèm 1 hình
+infographic tóm tắt ở đầu bài, nên phần chữ KHÔNG cần viết thành đoạn văn dài
+lặp lại. CHỈ dùng thông tin có trong tài liệu đính kèm — tuyệt đối không bịa
+thêm số liệu/định nghĩa. Giải thích thuật ngữ khó ngay khi xuất hiện, **in đậm**
+từ khoá quan trọng. Ưu tiên heading phụ ###, gạch đầu dòng ngắn, bảng so sánh;
+mỗi đoạn văn tối đa 3-4 câu.)
 
 ## Liên hệ thực tế
 (Phần NÀY được phép bổ sung kiến thức ngoài tài liệu: ví dụ đời sống, ứng dụng thực tế phù hợp trình độ "{level}". Ghi rõ ràng, sinh động.)

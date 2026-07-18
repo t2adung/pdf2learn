@@ -26,14 +26,22 @@ MIN_QUESTIONS = 3
 
 
 def _compose_content(markdown: str, images: list) -> str:
-    """Ghép section hình minh hoạ vào cuối content. Ảnh tham chiếu bằng
-    filename trần (ảnh được upload riêng vào hệ thống)."""
-    if not images:
-        return markdown
-    lines = ["", "## Hình minh hoạ"]
-    for img in images:
-        lines.append(f"![{img['caption']}]({img['file']})")
-    return markdown.rstrip() + "\n" + "\n".join(lines)
+    """Chèn infographic tóm tắt lên NGAY ĐẦU bài (trước cả '## Mục tiêu') để
+    học sinh nắm nhanh nội dung bằng hình trước khi đọc chữ; ảnh minh hoạ gốc
+    trích từ PDF được ghép vào cuối như cũ. Ảnh tham chiếu bằng filename trần
+    (ảnh được upload riêng vào hệ thống)."""
+    infographic = next((img for img in images if img.get("kind") == "infographic"), None)
+    photos = [img for img in images if img.get("kind") != "infographic"]
+
+    out = markdown
+    if infographic:
+        out = f"![{infographic['caption']}]({infographic['file']})\n\n" + out.lstrip()
+    if photos:
+        lines = ["", "## Hình minh hoạ"]
+        for img in photos:
+            lines.append(f"![{img['caption']}]({img['file']})")
+        out = out.rstrip() + "\n" + "\n".join(lines)
+    return out
 
 
 def export(structure: list, content: dict, images: dict, questions: dict,

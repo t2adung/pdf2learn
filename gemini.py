@@ -191,7 +191,7 @@ class MockGemini(Gemini):
 
     def generate_text(self, parts, tag, temperature=0.4):
         self._record(tag, 800, 300)
-        if tag == "svg_diagram":
+        if tag == "infographic":
             return ('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="200">'
                     '<rect x="10" y="10" width="200" height="60" fill="#e3f2fd" stroke="#1565c0"/>'
                     '<text x="30" y="45" font-size="14">Khái niệm A</text>'

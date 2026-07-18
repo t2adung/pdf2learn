@@ -59,7 +59,7 @@ hết quota giữa chừng vẫn có N topic hoàn chỉnh, tự export partial 
 2. Structure  slug/order sinh bằng code (deterministic)       → work/02_structure.json
 ─ vòng lặp từng topic ─
 3. Content    Markdown bài học + key_points (AI, chunk trang) → work/03_content.json
-4. Images     trích ảnh PDF + AI lọc; fallback sinh SVG       → work/04_images.json + output/images/
+4. Images     AI sinh infographic tóm tắt + trích/lọc ảnh PDF → work/04_images.json + output/images/
 5. Questions  MCQ theo key_points (coverage) + validation     → work/05_questions.json
 6. Review     (--review) model thứ 2 thẩm định                → work/06_review.json
 ─ hết vòng lặp ─

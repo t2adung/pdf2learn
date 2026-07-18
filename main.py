@@ -6,7 +6,7 @@ Pipeline 6 stage, kết quả trung gian lưu ở runs/<tên-pdf>/work/:
   1. TOC        : bookmark PDF (code) hoặc AI suy ra mục lục
   2. Structure  : chuẩn hoá + sinh slug/order (code, deterministic)
   3. Content    : mỗi topic -> Markdown bài học + key_points (AI, chunk theo trang)
-  4. Images     : trích ảnh PDF + AI lọc; fallback sinh SVG diagram
+  4. Images     : AI sinh infographic tóm tắt bài + trích ảnh PDF/AI lọc
   5. Questions  : MCQ theo key_points (coverage) + pass validation đáp án
   6. Export     : CSV UTF-8 BOM đúng template + manifest.json
 

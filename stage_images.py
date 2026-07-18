@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
 """Stage 4: Hình minh hoạ.
 
-Thứ tự ưu tiên (chính xác kiến thức là trên hết):
-1. Trích ảnh gốc từ chính các trang PDF của topic (PyMuPDF) -> AI vision lọc bỏ
-   logo/trang trí, giữ ảnh có giá trị minh hoạ, kèm caption.
-2. Nếu topic không có ảnh dùng được -> AI sinh SVG diagram từ key_points (fallback).
+Hai nguồn ảnh, độc lập với nhau:
+1. Infographic tóm tắt: LUÔN sinh bằng AI (SVG) từ key_points của topic — đây
+   là ảnh đại diện đặt đầu bài, giúp học sinh nắm nhanh nội dung bằng hình
+   thay vì phải đọc hết chữ (nội dung Markdown vốn nhiều chữ, dễ ngán).
+2. Ảnh minh hoạ gốc: trích từ chính các trang PDF của topic (PyMuPDF) -> AI
+   vision lọc bỏ logo/trang trí, giữ ảnh có giá trị minh hoạ, kèm caption.
+   Đây là phần BỔ SUNG, không bắt buộc.
 
 Naming convention (deterministic, sinh bằng code): {topic_slug}_{nn}.{ext}
+(_01 luôn là infographic nếu sinh thành công; ảnh PDF đánh số tiếp theo)
 """
 import re
 from typing import Optional
@@ -40,16 +44,22 @@ LOẠI BỎ: logo, hoạ tiết trang trí, ảnh nền, icon, ảnh mờ/vô ng
 Với mỗi ảnh giữ lại, viết caption ngắn gọn bằng ngôn ngữ của bài học (index tính từ 0 theo thứ tự ảnh đính kèm).
 Nếu không ảnh nào đáng giữ, trả về keep = []."""
 
-SVG_PROMPT = """Vẽ MỘT sơ đồ SVG minh hoạ trực quan cho bài học "{topic_title}" (trình độ {level}),
+INFOGRAPHIC_PROMPT = """Thiết kế MỘT hình infographic tóm tắt bài học "{topic_title}" (trình độ {level}),
 dựa trên các ý chính sau:
 {key_points}
 
-Yêu cầu:
+Đây là ẢNH ĐẠI DIỆN đặt ở đầu bài học — mục tiêu là giúp học sinh nắm nhanh nội
+dung CHỦ YẾU BẰNG HÌNH, đỡ phải đọc một khối chữ dài và đơn điệu. Yêu cầu:
 - Trả về DUY NHẤT mã SVG hợp lệ (bắt đầu bằng <svg, kết thúc bằng </svg>), không giải thích, không markdown.
-- Kích thước khoảng 640x400, chữ dùng font-family sans-serif, cỡ chữ >= 13 để dễ đọc.
-- Nội dung chữ trong sơ đồ dùng ngôn ngữ của các ý chính ở trên.
-- Ưu tiên dạng: sơ đồ khối, sơ đồ phân loại, chu trình, hoặc timeline — chọn dạng phù hợp nội dung.
-- Màu sắc nhẹ nhàng, tương phản tốt, phù hợp tài liệu học tập."""
+- Bố cục infographic THẬT SỰ: 1 tiêu đề lớn trên cùng, bên dưới chia thành
+  3-6 khối/thẻ (card) màu sắc riêng biệt; mỗi khối có 1 icon đơn giản vẽ bằng
+  hình học (vòng tròn, tam giác, mũi tên, số thứ tự...) + tiêu đề ngắn
+  (3-6 từ) + tối đa 1 câu giải thích RẤT ngắn (dưới 12 từ). KHÔNG nhồi chữ dài.
+- Chọn bố cục phù hợp nội dung: lưới 2-3 cột, timeline ngang/dọc, chu trình
+  vòng tròn, hoặc sơ đồ phân cấp — ưu tiên dễ quét mắt trong vài giây.
+- Kích thước 800x1000 (dọc), font-family sans-serif, cỡ chữ tiêu đề >= 22, cỡ chữ nội dung >= 14.
+- Bảng màu hài hoà, tương phản tốt, tối đa 4-5 màu chủ đạo, nền sáng.
+- Chữ trong hình dùng ngôn ngữ của các ý chính ở trên."""
 
 
 def _extract_candidates(doc: fitz.Document, page_start: int, page_end: int) -> list:
@@ -85,50 +95,52 @@ def _extract_candidates(doc: fitz.Document, page_start: int, page_end: int) -> l
     return out
 
 
-def _gen_svg(client, row: dict, key_points: list) -> Optional[str]:
-    prompt = SVG_PROMPT.format(topic_title=row["topic_title"], level=row["level"],
-                               key_points="\n".join(f"- {k}" for k in key_points[:8]))
-    text = client.generate_text([{"text": prompt}], tag="svg_diagram", temperature=0.5)
+def _gen_infographic(client, row: dict, key_points: list) -> Optional[str]:
+    prompt = INFOGRAPHIC_PROMPT.format(topic_title=row["topic_title"], level=row["level"],
+                                       key_points="\n".join(f"- {k}" for k in key_points[:6]))
+    text = client.generate_text([{"text": prompt}], tag="infographic", temperature=0.5)
     m = re.search(r"<svg[\s\S]*?</svg>", text)
     return m.group(0) if m else None
 
 
 def generate_images_one(doc, row: dict, content_entry: dict, client, images_dir) -> list:
-    """Sinh danh sách ảnh cho MỘT topic."""
+    """Sinh danh sách ảnh cho MỘT topic: infographic tóm tắt (luôn sinh) + ảnh
+    minh hoạ gốc trích từ PDF (bổ sung, nếu có)."""
     images_dir.mkdir(parents=True, exist_ok=True)
     slug = row["topic_slug"]
-    if True:
-        cands = _extract_candidates(doc, row["page_start"], row["page_end"])
-        kept = []
-        if cands:
-            log(f"   [images ] {len(cands)} ảnh ứng viên, nhờ AI lọc...")
-            parts = [{"text": FILTER_PROMPT.format(topic_title=row["topic_title"])}]
-            for c in cands:
-                parts.append(client.image_part(c["data"], c["mime"]))
-            try:
-                res = client.generate_json(parts, FILTER_SCHEMA, tag="img_filter")
-                for k in res.get("keep", []):
-                    i = k["index"]
-                    if 0 <= i < len(cands):
-                        c = cands[i]
-                        fname = f"{slug}_{len(kept)+1:02d}.{c['ext']}"
-                        (images_dir / fname).write_bytes(c["data"])
-                        kept.append({"file": fname, "caption": k["caption"],
-                                     "source": f"pdf_page_{c['page']}"})
-            except Exception as e:
-                warn(f"{slug}: lọc ảnh lỗi ({e}), bỏ qua ảnh PDF.")
-        if not kept:
-            kps = (content_entry or {}).get("key_points", [])
-            if kps:
-                log(f"   [images ] không có ảnh gốc dùng được, sinh SVG diagram...")
-                try:
-                    svg = _gen_svg(client, row, kps)
-                    if svg:
-                        fname = f"{slug}_01.svg"
-                        (images_dir / fname).write_text(svg, encoding="utf-8")
-                        kept.append({"file": fname,
-                                     "caption": f"Sơ đồ tóm tắt: {row['topic_title']}",
-                                     "source": "ai_svg"})
-                except Exception as e:
-                    warn(f"{slug}: sinh SVG lỗi ({e}), topic không có hình.")
-        return kept
+    kept = []
+
+    kps = (content_entry or {}).get("key_points", [])
+    if kps:
+        log(f"   [images ] sinh infographic tóm tắt...")
+        try:
+            svg = _gen_infographic(client, row, kps)
+            if svg:
+                fname = f"{slug}_01.svg"
+                (images_dir / fname).write_text(svg, encoding="utf-8")
+                kept.append({"file": fname,
+                             "caption": f"Tóm tắt trực quan: {row['topic_title']}",
+                             "source": "ai_infographic", "kind": "infographic"})
+        except Exception as e:
+            warn(f"{slug}: sinh infographic lỗi ({e}), bỏ qua.")
+
+    cands = _extract_candidates(doc, row["page_start"], row["page_end"])
+    if cands:
+        log(f"   [images ] {len(cands)} ảnh ứng viên, nhờ AI lọc...")
+        parts = [{"text": FILTER_PROMPT.format(topic_title=row["topic_title"])}]
+        for c in cands:
+            parts.append(client.image_part(c["data"], c["mime"]))
+        try:
+            res = client.generate_json(parts, FILTER_SCHEMA, tag="img_filter")
+            for k in res.get("keep", []):
+                i = k["index"]
+                if 0 <= i < len(cands):
+                    c = cands[i]
+                    fname = f"{slug}_{len(kept)+1:02d}.{c['ext']}"
+                    (images_dir / fname).write_bytes(c["data"])
+                    kept.append({"file": fname, "caption": k["caption"],
+                                 "source": f"pdf_page_{c['page']}", "kind": "photo"})
+        except Exception as e:
+            warn(f"{slug}: lọc ảnh lỗi ({e}), bỏ qua ảnh PDF.")
+
+    return kept
