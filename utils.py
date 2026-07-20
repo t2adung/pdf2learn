@@ -1,87 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Tiện ích chung: slugify tiếng Việt, đọc/ghi JSON, log."""
+"""utils.py — BẢN DỰNG LẠI CHO SANDBOX TEST (file gốc không có trong bộ upload).
+Nếu repo của bạn đã có utils.py thì GIỮ BẢN GỐC, bỏ qua file này.
+"""
 import json
 import re
 import sys
 import unicodedata
 from pathlib import Path
-
-ROMAN = {"i": 1, "v": 5, "x": 10, "l": 50, "c": 100}
-
-
-def roman_to_int(s: str) -> int:
-    s = s.lower()
-    total, prev = 0, 0
-    for ch in reversed(s):
-        val = ROMAN.get(ch, 0)
-        if val < prev:
-            total -= val
-        else:
-            total += val
-            prev = val
-    return total
-
-
-def strip_diacritics(text: str) -> str:
-    text = text.replace("đ", "d").replace("Đ", "D")
-    text = unicodedata.normalize("NFD", text)
-    return "".join(c for c in text if unicodedata.category(c) != "Mn")
-
-
-def slugify(text: str, max_len: int = 60) -> str:
-    text = strip_diacritics(text).lower()
-    text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
-    text = re.sub(r"-{2,}", "-", text)
-    if len(text) > max_len:
-        text = text[:max_len].rstrip("-")
-    return text or "untitled"
-
-
-def module_slug(title: str) -> str:
-    """'Chương I – Mở đầu' -> 'chuong-1'; 'Chương 2 ...' -> 'chuong-2';
-    fallback: slugify toàn bộ title."""
-    m = re.match(r"\s*(chương|chuong|chapter|phần|phan|part)\s+([IVXLCivxlc]+|\d+)\b",
-                 strip_diacritics(title), re.IGNORECASE)
-    if m:
-        kw = slugify(m.group(1))
-        num = m.group(2)
-        n = int(num) if num.isdigit() else roman_to_int(num)
-        if n > 0:
-            return f"{kw}-{n}"
-    return slugify(title, max_len=40)
-
-
-def topic_slug(mod_slug: str, title: str) -> str:
-    """'Bài 1. Giới thiệu' + 'chuong-1' -> 'chuong-1-bai-1';
-    fallback: mod_slug + slug title rút gọn."""
-    m = re.match(r"\s*(bài|bai|lesson|unit|mục|muc)\s+(\d+)\b",
-                 strip_diacritics(title), re.IGNORECASE)
-    if m:
-        return f"{mod_slug}-{slugify(m.group(1))}-{int(m.group(2))}"
-    return f"{mod_slug}-{slugify(title, max_len=40)}"
-
-
-def uniquify(slug: str, taken: set) -> str:
-    if slug not in taken:
-        taken.add(slug)
-        return slug
-    i = 2
-    while f"{slug}-{i}" in taken:
-        i += 1
-    s = f"{slug}-{i}"
-    taken.add(s)
-    return s
-
-
-def load_json(path: Path, default=None):
-    if path.exists():
-        return json.loads(path.read_text(encoding="utf-8"))
-    return default
-
-
-def save_json(path: Path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def log(msg: str):
@@ -89,4 +14,46 @@ def log(msg: str):
 
 
 def warn(msg: str):
-    print(f"⚠️  {msg}", file=sys.stderr, flush=True)
+    print(f"⚠️  {msg}", flush=True)
+
+
+def load_json(path, default=None):
+    p = Path(path)
+    if not p.exists():
+        return default
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
+def save_json(path, obj):
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def strip_diacritics(s: str) -> str:
+    s = str(s).replace("đ", "d").replace("Đ", "D")
+    nfd = unicodedata.normalize("NFD", s)
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+
+
+def _slugify(s: str, max_len: int = 48) -> str:
+    s = strip_diacritics(s).lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    return s[:max_len].rstrip("-") or "x"
+
+
+def module_slug(title: str) -> str:
+    return _slugify(title, 32)
+
+
+def topic_slug(mod_slug: str, title: str) -> str:
+    return f"{mod_slug}-{_slugify(title, 48)}"
+
+
+def uniquify(base: str, taken: set) -> str:
+    slug, n = base, 2
+    while slug in taken:
+        slug = f"{base}-{n}"
+        n += 1
+    taken.add(slug)
+    return slug

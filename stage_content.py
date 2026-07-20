@@ -1,44 +1,108 @@
 # -*- coding: utf-8 -*-
-"""Stage 3: Sinh nội dung bài học cho từng topic.
+"""Stage 3 (v2): Sinh nội dung bài học cho từng topic — dạng LEARNING OBJECT JSON.
 
-Kỹ thuật chống hallucination:
+Thay đổi cốt lõi so với v1:
+- v1: AI trả về 1 blob "content_markdown" => format do AI quyết, khó kiểm soát,
+  muốn đổi layout phải sinh lại (tốn token).
+- v2: AI CHỈ trả về DỮ LIỆU CÓ CẤU TRÚC (objectives, key_terms, sections,
+  mindmap, misconceptions...). Cú pháp Markdown/SVG do CODE sinh
+  (render_markdown.py + mindmap_svg.py) => 0 token cho khâu format,
+  đổi layout chỉ cần re-render từ cache, không gọi lại AI.
+
+Kỹ thuật chống hallucination (giữ nguyên từ v1):
 - Chỉ gửi đúng các trang của topic (cắt sub-PDF theo page range).
-- Prompt tách rõ phần nào phải bám tài liệu, phần nào được bổ sung.
+- Prompt tách rõ field nào phải bám tài liệu, field nào được bổ sung.
 - key_points sinh ra ở đây sẽ được Stage 5 dùng để đảm bảo coverage câu hỏi.
 """
 import fitz
 
 from utils import log
 
+# Learning Object schema — mọi field đều là DATA, không chứa cú pháp markdown.
 CONTENT_SCHEMA = {
     "type": "object",
     "properties": {
-        "content_markdown": {"type": "string"},
+        "objectives": {"type": "array", "items": {"type": "string"}},
+        "hook": {"type": "string"},
+        "key_terms": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "term": {"type": "string"},
+                "definition": {"type": "string"},
+                "example": {"type": "string"},
+            },
+            "required": ["term", "definition"],
+        }},
+        "sections": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "heading": {"type": "string"},
+                "icon_hint": {"type": "string"},
+                "points": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["heading", "points"],
+        }},
+        "mindmap": {
+            "type": "object",
+            "properties": {
+                "root": {"type": "string"},
+                "branches": {"type": "array", "items": {
+                    "type": "object",
+                    "properties": {
+                        "label": {"type": "string"},
+                        "children": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["label", "children"],
+                }},
+            },
+            "required": ["root", "branches"],
+        },
+        "real_life": {"type": "array", "items": {"type": "string"}},
+        "memory_hooks": {"type": "array", "items": {"type": "string"}},
+        "misconceptions": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "wrong": {"type": "string"},
+                "correct": {"type": "string"},
+            },
+            "required": ["wrong", "correct"],
+        }},
         "key_points": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["content_markdown", "key_points"],
+    "required": ["objectives", "sections", "mindmap", "key_points"],
 }
 
 CONTENT_PROMPT = """Bạn là giáo viên giỏi, đang soạn bài học cho học sinh trình độ "{level}".
 Tài liệu PDF đính kèm là các trang thuộc bài: "{topic_title}" (thuộc {module_title}).
 
-Soạn bài học bằng NGÔN NGỮ CỦA TÀI LIỆU GỐC, định dạng Markdown, đúng cấu trúc:
+Trả về DỮ LIỆU BÀI HỌC dạng JSON theo schema, bằng NGÔN NGỮ CỦA TÀI LIỆU GỐC.
+Mỗi field là TEXT THUẦN (không markdown, không ký hiệu **, ##, -).
 
-## Mục tiêu
-(2-4 gạch đầu dòng: học xong bài này người học làm được gì)
+QUY TẮC ĐỘ DÀI (BẮT BUỘC — bài học phải đọc hết trong ~4 phút):
+- Mỗi point là MỘT câu ngắn gọn, TỐI ĐA 20 TỪ. Một ý một câu, không nhồi
+  nhiều ý vào một point bằng dấu phẩy nối dài.
+- Viết cho học sinh {level} đọc lướt hiểu ngay: ưu tiên từ quen thuộc, câu chủ động.
+- Tổng "sections" không vượt quá ~350 từ. Thà ít point mà cô đọng còn hơn
+  nhiều point dài dòng — chỉ giữ ý CỐT LÕI, bỏ chi tiết phụ.
 
-## Nội dung chính
-(Tóm tắt CHI TIẾT và DỄ HIỂU. CHỈ dùng thông tin có trong tài liệu đính kèm — tuyệt đối không bịa thêm số liệu/định nghĩa. Giải thích thuật ngữ khó ngay khi xuất hiện. Dùng heading phụ ###, bảng, danh sách khi phù hợp.)
+NHÓM PHẢI BÁM SÁT TÀI LIỆU (tuyệt đối không bịa thêm số liệu/định nghĩa):
+- "sections": 2-4 mục nội dung chính. Mỗi mục: heading ngắn, icon_hint là MỘT
+  emoji phù hợp, + 2-4 points (mỗi point <= 20 từ). Giải thích thuật ngữ khó
+  gọn trong 1 point.
+- "key_terms": 2-5 thuật ngữ quan trọng. definition <= 20 từ; example ngắn.
+- "mindmap": sơ đồ tư duy tóm tắt bài. root = tên khái niệm trung tâm (ngắn),
+  3-5 branches, mỗi branch label <= 5 từ và 2-4 children (mỗi child <= 8 từ).
+- "key_points": 6-15 ý kiến thức QUAN TRỌNG NHẤT (mỗi ý 1 câu hoàn chỉnh, độc
+  lập, kiểm tra được — dùng sinh câu hỏi trắc nghiệm). Số lượng tỉ lệ lượng
+  kiến thức thật: bài ngắn ít point, bài dài nhiều point. key_points KHÔNG bị
+  giới hạn 20 từ (đây là dữ liệu nội bộ, không hiển thị cho người học).
+- "objectives": 2-3 mục tiêu — học xong làm được gì (mỗi mục <= 15 từ).
 
-## Liên hệ thực tế
-(Phần NÀY được phép bổ sung kiến thức ngoài tài liệu: ví dụ đời sống, ứng dụng thực tế phù hợp trình độ "{level}". Ghi rõ ràng, sinh động.)
-
-## Ghi nhớ
-(3-6 gạch đầu dòng, mỗi dòng 1 ý cốt lõi phải nhớ)
-
-Đồng thời trả về "key_points": danh sách 6-15 ý kiến thức QUAN TRỌNG NHẤT của bài
-(mỗi ý là 1 câu hoàn chỉnh, độc lập, kiểm tra được — sẽ dùng để sinh câu hỏi trắc nghiệm).
-Số lượng key_points tỉ lệ với lượng kiến thức thật trong tài liệu: bài ngắn ít point, bài dài nhiều point."""
+NHÓM ĐƯỢC PHÉP BỔ SUNG kiến thức ngoài tài liệu (phù hợp trình độ "{level}"):
+- "hook": 1 câu hỏi khởi động gây tò mò, gắn đời sống (<= 30 từ).
+- "real_life": 1-2 ví dụ ứng dụng thực tế (mỗi ví dụ <= 20 từ).
+- "memory_hooks": 1-2 mẹo ghi nhớ ngắn.
+- "misconceptions": 1-2 cặp hiểu-lầm (wrong) và đính chính (correct), mỗi vế <= 20 từ."""
 
 
 def cut_pages(doc: fitz.Document, page_start: int, page_end: int,
@@ -71,13 +135,18 @@ def cut_pages(doc: fitz.Document, page_start: int, page_end: int,
 
 
 def generate_content_one(doc: fitz.Document, row: dict, client, dpi: int = 0) -> dict:
-    """Sinh content + key_points cho MỘT topic."""
+    """Sinh Learning Object (JSON) cho MỘT topic."""
     slug = row["topic_slug"]
     log(f"   [content ] trang {row['page_start']}-{row['page_end']}...")
     sub_pdf = cut_pages(doc, row["page_start"], row["page_end"], dpi=dpi)
     prompt = CONTENT_PROMPT.format(level=row["level"],
                                    topic_title=row["topic_title"],
                                    module_title=row["module_title"])
-    return client.generate_json(
+    lo = client.generate_json(
         [client.pdf_part(sub_pdf, f"{slug}.pdf"), {"text": prompt}],
         CONTENT_SCHEMA, tag="content")
+    # dọn field rỗng để render sạch
+    for k in ("objectives", "key_terms", "sections", "real_life",
+              "memory_hooks", "misconceptions", "key_points"):
+        lo[k] = [x for x in (lo.get(k) or []) if x]
+    return lo
