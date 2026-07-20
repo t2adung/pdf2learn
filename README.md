@@ -82,6 +82,7 @@ rõ, export partial rồi thoát — quota reset ~14-15h chiều giờ VN.
 | `--reviewer X` | `groq` (Llama 70B, độc lập nhà cung cấp — mặc định) / `openrouter` (DeepSeek R1) / `gemini-pro` (duy nhất đối chiếu được PDF gốc) |
 | `--review-fix` | Tự loại câu hỏi bị review đánh `severity=high` (mặc định chỉ báo cáo) |
 | `--redo-from N` | Xoá cache stage N→7 rồi sinh lại (vd `5`: sinh lại câu hỏi; ≤5 reset đánh số batch) |
+| `--redo-content` | Chỉ sinh lại content + infographic (stage 3-4), GIỮ NGUYÊN câu hỏi/review cũ — dùng khi chỉ muốn thử lại prompt content/infographic mà không tốn quota sinh lại câu hỏi |
 | `--force-ai-toc` | Bỏ qua bookmark PDF, luôn dùng AI trích mục lục |
 | `--dpi N` | Nén trang scan độ phân giải CAO về N dpi gray (có guard chống upscale — scan đã nhỏ thì tự giữ nguyên) |
 | `--model` | Mặc định `gemini-2.5-flash` |

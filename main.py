@@ -42,6 +42,11 @@ def main():
                          "(giảm token mạnh; khuyến nghị 110 cho sách scan; 0 = tắt)")
     ap.add_argument("--redo-from", type=int, default=99, choices=range(1, 8),
                     metavar="N", help="xoá cache từ stage N trở đi rồi sinh lại")
+    ap.add_argument("--redo-content", action="store_true",
+                    help="chỉ sinh lại content + infographic (stage 3-4) cho các topic "
+                         "đã xong, GIỮ NGUYÊN câu hỏi/review cũ — dùng khi chỉ muốn thử "
+                         "lại prompt content/infographic mà không tốn quota sinh lại câu "
+                         "hỏi (khác --redo-from 3, vốn sinh lại cả câu hỏi)")
     ap.add_argument("--force-ai-toc", action="store_true",
                     help="bỏ qua bookmark PDF, luôn dùng AI trích mục lục")
     ap.add_argument("--fused", action="store_true",
@@ -104,6 +109,17 @@ def main():
             log(f"♻️  Xoá cache stage {n}: {f.name}")
     if args.redo_from <= 4 and images_dir.exists():
         shutil.rmtree(images_dir)
+
+    # ---- --redo-content: chỉ xoá cache content(3) + images(4), GIỮ câu hỏi/review ----
+    if args.redo_content:
+        for n in (3, 4):
+            f = caches[n]
+            if f.exists():
+                f.unlink()
+                log(f"♻️  Xoá cache stage {n}: {f.name}")
+        if images_dir.exists():
+            shutil.rmtree(images_dir)
+
     if args.redo_from <= 5 and f_export_state.exists():
         f_export_state.unlink()
         warn("Reset trạng thái batch export (các thư mục batch-* cũ đã lỗi thời, "
