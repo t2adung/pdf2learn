@@ -6,9 +6,10 @@ Pipeline 6 stage, kết quả trung gian lưu ở runs/<tên-pdf>/work/:
   1. TOC        : bookmark PDF (code) hoặc AI suy ra mục lục
   2. Structure  : chuẩn hoá + sinh slug/order (code, deterministic)
   3. Content    : mỗi topic -> Markdown bài học + key_points (AI, chunk theo trang)
-  4. Images     : gọi model sinh ảnh vẽ infographic tổng hợp kiến thức từ
-                  Learning Object (mặc định, +1 request ảnh/topic); tuỳ chọn
-                  trích thêm ảnh gốc PDF + AI lọc (--book-images)
+  4. Images     : dựng infographic tổng hợp kiến thức bằng HTML/CSS + chụp
+                  PNG bằng headless Chromium (0 token, mặc định; cần cài
+                  Playwright, xem README); tuỳ chọn trích thêm ảnh gốc PDF +
+                  AI lọc (--book-images)
   5. Questions  : MCQ theo key_points (coverage) + pass validation đáp án
   6. Export     : CSV UTF-8 BOM đúng template + manifest.json
 
@@ -43,8 +44,6 @@ def main():
     ap.add_argument("pdf", type=Path, help="đường dẫn file PDF")
     ap.add_argument("--level", default="Lớp 6", help='giá trị cột level, vd "Lớp 6"')
     ap.add_argument("--model", default="gemini-2.5-flash")
-    ap.add_argument("--image-model", default="gemini-2.5-flash-image",
-                    help="model sinh ảnh infographic (xem --no-infographic để tắt)")
     ap.add_argument("--density", default="full",
                     choices=["full", "compact", "minimal"],
                     help="mật độ chữ cột content (markdown): full (đủ) | compact "
@@ -82,10 +81,10 @@ def main():
                          "(tiết kiệm ~50% request stage 3+5; xem README về trade-off)")
     ap.add_argument("--no-images", action="store_true", help="bỏ qua stage 4")
     ap.add_argument("--no-infographic", action="store_true",
-                    help="tắt gọi model sinh ảnh infographic tổng hợp kiến thức "
-                         "(+1 request ẢNH/topic, không deterministic). Mặc định BẬT — "
-                         "đây là ảnh chính của topic. Dùng --dry-run để test pipeline "
-                         "trước khi tốn quota ảnh thật.")
+                    help="tắt vẽ ảnh infographic tổng hợp kiến thức (HTML/CSS + "
+                         "headless Chromium, 0 token). Mặc định BẬT — đây là ảnh "
+                         "chính của topic. Tự bỏ qua (cảnh báo, không lỗi) nếu chưa "
+                         "cài Playwright — xem README.")
     ap.add_argument("--book-images", action="store_true",
                     help="nhúng THÊM ảnh trích từ trang PDF (AI lọc, +1 request/topic). "
                          "Mặc định TẮT. Liệt kê RIÊNG, không ghép vào infographic.")
@@ -236,11 +235,8 @@ def main():
     if not args.yes and not args.dry_run and not content_cached:
         n_topics = len(structure)
         est = n_topics * (2 if args.no_validate else 3)
-        if not args.no_images:
-            if not args.no_infographic:
-                est += n_topics   # 1 request ẢNH/topic (model sinh ảnh)
-            if args.book_images:
-                est += n_topics   # 1 request img_filter/topic
+        if not args.no_images and args.book_images:
+            est += n_topics   # 1 request img_filter/topic (infographic giờ 0 token)
         print(f"\n👀 Kiểm tra mục lục phía trên: {n_topics} topic, "
               f"ước tính ~{est} request AI.")
         print("   Sai page range? Ctrl+C, sửa work/01_toc.json (hoặc dùng "
@@ -287,48 +283,64 @@ def main():
         from stage_review import review_one
         reviewer, with_pdf_flag = _build_reviewer(args, client)
 
+    # ---- Infographic: 1 HtmlRenderer (Chromium) dùng chung cả lần chạy ----
+    # (khởi động browser tốn ~1-2s, mở/đóng riêng mỗi topic sẽ chậm không
+    # cần thiết). Playwright là dependency TUỲ CHỌN — chưa cài thì cảnh báo
+    # 1 lần rồi chạy tiếp KHÔNG có ảnh infographic, không sập pipeline.
+    renderer = None
+    if not args.no_images and not args.no_infographic:
+        from html_render import HtmlRenderer, RendererUnavailable
+        try:
+            renderer = HtmlRenderer()
+        except RendererUnavailable as e:
+            warn(str(e))
+
     doc = fitz.open(args.pdf)
     aborted = None
     total = len(structure)
-    for idx, row in enumerate(structure, 1):
-        slug = row["topic_slug"]
-        steps_done = (slug in content
-                      and (args.no_images or slug in images)
-                      and slug in questions
-                      and (not args.review or slug in review))
-        if steps_done:
-            log(f"── Topic {idx}/{total}: {slug} ✓ (hoàn chỉnh, bỏ qua) ──")
-            continue
-        log(f"── Topic {idx}/{total}: {slug} — {row['topic_title']} ──")
-        try:
-            if slug not in content:
-                content[slug] = generate_content_one(doc, row, client, dpi=args.dpi)
-                save_json(caches[3], content)
-            if not args.no_images and slug not in images:
-                images[slug] = generate_images_one(doc, row, content[slug], client,
-                                                   images_dir, book_images=args.book_images,
-                                                   infographic=not args.no_infographic,
-                                                   image_model=args.image_model)
-                save_json(caches[4], images)
-            if slug not in questions:
-                qs, dropped = generate_questions_one(row, content[slug], client,
-                                                     validate=not args.no_validate)
-                questions[slug] = qs
-                if dropped:
-                    questions.setdefault("_dropped", {})[slug] = dropped
-                save_json(caches[5], questions)
-            if args.review and (slug not in review or "error" in review.get(slug, {})):
-                wp = (doc, reviewer) if with_pdf_flag else None
-                review[slug] = review_one(row, content[slug],
-                                          questions.get(slug, []), reviewer, wp)
-                save_json(caches[6], review)
-        except GeminiError as e:
-            aborted = str(e)
-            warn(f"Dừng tại topic {idx}/{total} ({slug}): {e}")
-            warn(f"Đã hoàn chỉnh {idx-1} topic — vẫn export phần này. "
-                 "Chạy lại CHÍNH LỆNH CŨ để tiếp tục từ topic dở dang.")
-            break
-    doc.close()
+    try:
+        for idx, row in enumerate(structure, 1):
+            slug = row["topic_slug"]
+            steps_done = (slug in content
+                          and (args.no_images or slug in images)
+                          and slug in questions
+                          and (not args.review or slug in review))
+            if steps_done:
+                log(f"── Topic {idx}/{total}: {slug} ✓ (hoàn chỉnh, bỏ qua) ──")
+                continue
+            log(f"── Topic {idx}/{total}: {slug} — {row['topic_title']} ──")
+            try:
+                if slug not in content:
+                    content[slug] = generate_content_one(doc, row, client, dpi=args.dpi)
+                    save_json(caches[3], content)
+                if not args.no_images and slug not in images:
+                    images[slug] = generate_images_one(doc, row, content[slug], client,
+                                                       images_dir, book_images=args.book_images,
+                                                       infographic=not args.no_infographic,
+                                                       renderer=renderer)
+                    save_json(caches[4], images)
+                if slug not in questions:
+                    qs, dropped = generate_questions_one(row, content[slug], client,
+                                                         validate=not args.no_validate)
+                    questions[slug] = qs
+                    if dropped:
+                        questions.setdefault("_dropped", {})[slug] = dropped
+                    save_json(caches[5], questions)
+                if args.review and (slug not in review or "error" in review.get(slug, {})):
+                    wp = (doc, reviewer) if with_pdf_flag else None
+                    review[slug] = review_one(row, content[slug],
+                                              questions.get(slug, []), reviewer, wp)
+                    save_json(caches[6], review)
+            except GeminiError as e:
+                aborted = str(e)
+                warn(f"Dừng tại topic {idx}/{total} ({slug}): {e}")
+                warn(f"Đã hoàn chỉnh {idx-1} topic — vẫn export phần này. "
+                     "Chạy lại CHÍNH LỆNH CŨ để tiếp tục từ topic dở dang.")
+                break
+    finally:
+        doc.close()
+        if renderer:
+            renderer.close()
     questions.pop("_dropped", None)
 
     # ---- Stage 7: Export (full snapshot + delta batch) ----

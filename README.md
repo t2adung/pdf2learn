@@ -13,6 +13,10 @@ Reviewer (tuỳ chọn): Groq / OpenRouter / Gemini Pro.
 - Python **3.9+** (khuyến nghị 3.12+)
 - `pip install -r requirements.txt` (pymupdf + requests)
 - API key miễn phí: https://aistudio.google.com → `export GEMINI_API_KEY=AIza...`
+- Tuỳ chọn — muốn có ảnh infographic tổng hợp kiến thức (stage 4, 0 token AI,
+  vẽ bằng HTML/CSS + chụp qua headless Chromium):
+  `pip install playwright && playwright install chromium`. Không cài vẫn
+  chạy được toàn bộ pipeline, chỉ là topic không có ảnh infographic.
 
 ## Bắt đầu nhanh
 
@@ -59,7 +63,7 @@ hết quota giữa chừng vẫn có N topic hoàn chỉnh, tự export partial 
 2. Structure  slug/order sinh bằng code (deterministic)       → work/02_structure.json
 ─ vòng lặp từng topic ─
 3. Content    Markdown bài học + key_points (AI, chunk trang) → work/03_content.json
-4. Images     model sinh ảnh vẽ infographic + trích ảnh PDF   → work/04_images.json + output/images/
+4. Images     HTML/CSS + Chromium vẽ infographic + trích ảnh PDF → work/04_images.json + output/images/
 5. Questions  MCQ theo key_points (coverage) + validation     → work/05_questions.json
 6. Review     (--review) model thứ 2 thẩm định                → work/06_review.json
 ─ hết vòng lặp ─
@@ -76,9 +80,8 @@ rõ, export partial rồi thoát — quota reset ~14-15h chiều giờ VN.
 |---|---|
 | `--level "Lớp 6"` | Giá trị cột `level` (mặc định "Lớp 6") |
 | `--dry-run` | MockGemini, không cần API key — kiểm tra pipeline & format output |
-| `--no-images` | Bỏ stage ảnh: −1..2 request/topic (~30%), lấy ảnh sau bằng cách chạy lại bỏ cờ này |
-| `--no-infographic` | Tắt gọi model sinh ảnh vẽ infographic tổng hợp kiến thức (−1 request ẢNH/topic). Mặc định BẬT |
-| `--image-model` | Model sinh ảnh (mặc định `gemini-2.5-flash-image`) |
+| `--no-images` | Bỏ stage ảnh hoàn toàn (khỏi cần cài Playwright), lấy ảnh sau bằng cách chạy lại bỏ cờ này |
+| `--no-infographic` | Tắt vẽ ảnh infographic tổng hợp kiến thức (HTML/CSS + Chromium, 0 token). Mặc định BẬT — tự bỏ qua (cảnh báo, không lỗi) nếu chưa cài Playwright |
 | `--book-images` | Trích thêm ảnh gốc từ trang PDF + AI lọc (+1 request/topic), liệt kê riêng, không ghép vào infographic |
 | `--redo-images` | Chỉ xoá cache + thư mục ảnh (stage 4) rồi sinh lại — giữ nguyên content/câu hỏi đã có |
 | `--no-validate` | Bỏ pass tự giải kiểm chứng đáp án (không khuyến nghị) |

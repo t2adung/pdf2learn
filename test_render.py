@@ -6,7 +6,7 @@ import csv
 import io
 import sys
 
-from infographic_prompt import build_prompt as build_infographic_prompt
+from infographic_html import render as render_infographic_html
 from render_markdown import render
 
 LO = {
@@ -84,37 +84,37 @@ check("markdown sống sót round-trip CSV", back == md)
 md2 = render(LO, use_tables=False)
 check("use_tables=False không sinh bảng", "| --- |" not in md2 and "❌" in md2)
 
-# --- 4. prompt mô tả ảnh cho model sinh infographic (thuần code, 0 token) ---
-prompt = build_infographic_prompt(LO, 'Bài 1: Lịch sử là gì? & "khoa học" <thử ký tự lạ>')
-check("prompt nhắc đúng tiêu đề (kể cả ký tự đặc biệt)",
-      'tiêu đề lớn "Bài 1: Lịch sử là gì? & "khoa học" <thử ký tự lạ>"' in prompt)
-check("prompt có khối Khái niệm trọng tâm", "Khái niệm trọng tâm" in prompt)
-check("prompt có công thức", "Không có công thức, dùng thử render" in prompt)
-check("prompt có khối Ghi nhớ nhanh (khối cuối, cố định)", '"Ghi nhớ nhanh"' in prompt)
-check("prompt yêu cầu chép đúng nguyên văn (chống bịa/sai chính tả)",
-      "ĐÚNG NGUYÊN VĂN" in prompt)
-check("prompt khoá tỉ lệ A4 (3:4)", "TỈ LỆ TRANG A4" in prompt and "3:4" in prompt)
-check("dấu | trong key_terms giữ nguyên (prompt văn bản, không cần escape XML)",
-      "Quá khứ | Hiện tại" in prompt)
-check("giới hạn tối đa 4 khối nội dung chính -> bỏ khối 5 (Lưu ý & mẹo nhớ)",
-      prompt.count("- Khối số ") == 4 and "Lưu ý & mẹo nhớ" not in prompt)
+# --- 4. infographic HTML (thuần code, 0 token — không phải AI vẽ chữ nên
+# KHÔNG BAO GIỜ sai chính tả tiếng Việt) ---
+ihtml = render_infographic_html(LO, 'Bài 1: Lịch sử là gì? & "khoa học" <thử ký tự lạ>')
+check("HTML mở/đóng đúng", ihtml.startswith("<!doctype html>") and ihtml.rstrip().endswith("</html>"))
+check("tiêu đề được escape đúng (ký tự đặc biệt không phá layout)",
+      "&lt;thử ký tự lạ&gt;" in ihtml and "&amp;" in ihtml and "&quot;khoa học&quot;" in ihtml)
+check("có khối Khái niệm trọng tâm", "Khái niệm trọng tâm" in ihtml)
+check("có công thức trong khối", "Không có công thức, dùng thử render" in ihtml)
+check("có khối Ghi nhớ nhanh", "Ghi nhớ nhanh" in ihtml)
+check("dấu | trong key_terms giữ nguyên (HTML text, không phá cú pháp)",
+      "Quá khứ | Hiện tại" in ihtml)
 try:
-    build_infographic_prompt({}, "Bài rỗng")
+    render_infographic_html({}, "Bài rỗng")
     check("Learning Object rỗng -> raise ValueError", False)
 except ValueError:
     check("Learning Object rỗng -> raise ValueError", True)
 
-# nhiều bullet vượt ngân sách ký tự/khối -> bỏ NGUYÊN VẸN bullet cuối, KHÔNG
-# cắt cụt giữa câu (cắt giữa câu tiếng Việt dễ đứt gãy từ ghép, vd "lịch sử"
-# -> "lịch"; model được yêu cầu chép nguyên văn nên sẽ chép sai y hệt phần cụt)
-bullet_a = "Bullet đầu tiên khá dài để mau chạm ngân sách ký tự của khối này."
-bullet_b = "Bullet thứ hai cũng dài không kém để chắc chắn tổng vượt quá giới hạn cho phép."
-long_lo = {"sections": [{"heading": "Test", "points": [bullet_a, bullet_b]}]}
-long_prompt = build_infographic_prompt(long_lo, "Test")
-check("bullet giữ NGUYÊN VẸN, không bị cắt cụt giữa câu",
-      bullet_a in long_prompt)
-check("bullet vượt ngân sách bị bỏ HẲN (không xuất hiện dạng cụt lẫn dạng đủ)",
-      bullet_b not in long_prompt and "chắc chắn tổng vượt" not in long_prompt)
+# --- 5. render PNG bằng headless Chromium (TUỲ CHỌN — bỏ qua nếu chưa cài
+# Playwright, xem requirements.txt; test suite vẫn 0 token/0 dependency bắt buộc) ---
+png = None
+try:
+    from html_render import HtmlRenderer, RendererUnavailable
+    try:
+        _r = HtmlRenderer()
+        png = _r.render_png(ihtml)
+        _r.close()
+        check("render PNG bằng Chromium thành công", len(png) > 1000)
+    except RendererUnavailable as e:
+        print(f"⚠️  Bỏ qua test render PNG (không bắt buộc) — {e}")
+except ImportError:
+    print("⚠️  Bỏ qua test render PNG — chưa cài playwright (không bắt buộc, xem requirements.txt).")
 
 print()
 if fails:
@@ -123,6 +123,11 @@ if fails:
 print("✅ Tất cả check đã qua. 0 token đã dùng.")
 with open("preview_content.md", "w", encoding="utf-8") as f:
     f.write(md)
-with open("preview_infographic_prompt.txt", "w", encoding="utf-8") as f:
-    f.write(prompt)
-print("   Xem: preview_content.md, preview_infographic_prompt.txt")
+with open("preview_infographic.html", "w", encoding="utf-8") as f:
+    f.write(ihtml)
+preview_files = "preview_content.md, preview_infographic.html"
+if png:
+    with open("preview_infographic.png", "wb") as f:
+        f.write(png)
+    preview_files += ", preview_infographic.png"
+print(f"   Xem: {preview_files}")

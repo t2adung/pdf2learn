@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Stage 4 (v4): Hình minh hoạ.
+"""Stage 4 (v5): Hình minh hoạ.
 
 Hai nguồn ảnh ĐỘC LẬP, có thể bật/tắt riêng:
-1. Infographic "tổng hợp kiến thức" — GỌI MODEL SINH ẢNH (vd
-   gemini-2.5-flash-image) với prompt mô tả dựng từ Learning Object (xem
-   infographic_prompt.py). Mặc định BẬT — đây là ảnh chính của topic.
-   Khác v3 (vẽ SVG bằng code, 0 token): giờ tốn 1 request ảnh/topic, kết
-   quả không deterministic, cần soát chữ trong ảnh trước khi dùng chính
-   thức — đánh đổi để có minh hoạ vẽ tay giống mẫu tham khảo thay vì hình
-   khối hình học.
+1. Infographic "tổng hợp kiến thức" — dựng HTML/CSS THUẦN CODE từ Learning
+   Object (xem infographic_html.py), rồi chụp thành PNG bằng headless
+   Chromium (xem html_render.py). 0 token AI, deterministic, KHÔNG BAO GIỜ
+   sai chính tả (chữ là text HTML thật). Mặc định BẬT — đây là ảnh chính
+   của topic. Dependency Playwright là TUỲ CHỌN: chưa cài thì tự bỏ qua ảnh
+   này (cảnh báo 1 lần), không sập pipeline.
+   (v4 từng gọi model sinh ảnh — bị lỗi chính tả tiếng Việt trong ảnh, đã
+   revert. Trước nữa là vẽ SVG tay — bố cục đúng nhưng phải tự tính word-
+   wrap; HTML/CSS để trình duyệt lo việc đó, đỡ code hơn hẳn.)
 2. Ảnh gốc trích từ trang PDF (PyMuPDF) -> AI vision lọc bỏ logo/trang trí,
    giữ ảnh có giá trị minh hoạ. Chỉ chạy khi bật --book-images (mặc định TẮT,
    tốn thêm 1 request img_filter/topic).
@@ -17,7 +19,7 @@ Naming convention (deterministic, sinh bằng code): {topic_slug}_{nn}.{ext}
 """
 import fitz
 
-from infographic_prompt import build_prompt as build_infographic_prompt
+from infographic_html import render as render_infographic_html
 from utils import log, warn
 
 MIN_DIM = 160          # bỏ ảnh quá nhỏ (icon, bullet trang trí)
@@ -92,42 +94,45 @@ def _extract_candidates(doc: fitz.Document, page_start: int, page_end: int) -> l
     return out
 
 
-def _infographic(row: dict, content_entry: dict, client, images_dir, image_model: str):
-    """Gọi model sinh ảnh để vẽ infographic tổng hợp kiến thức. Trả về entry
-    ảnh hoặc None. Tốn 1 request ảnh/topic — KHÔNG deterministic (khác v3)."""
+def _infographic(row: dict, content_entry: dict, renderer, images_dir):
+    """Dựng HTML rồi chụp PNG bằng headless Chromium. Trả về entry ảnh hoặc
+    None. Ghi cả .html (nguồn) lẫn .png (dùng cho pipeline) cùng thư mục."""
+    if renderer is None:
+        return None
     try:
-        prompt = build_infographic_prompt(content_entry or {}, row["topic_title"])
+        html = render_infographic_html(content_entry or {}, row["topic_title"])
     except ValueError:
-        return None  # Learning Object rỗng (vd cache v1 cũ) -> không có gì để mô tả
+        return None  # Learning Object rỗng (vd cache v1 cũ) -> không có gì để vẽ
     slug = row["topic_slug"]
     try:
-        data, mime = client.generate_image(prompt, tag="infographic", model=image_model)
+        png = renderer.render_png(html)
     except Exception as e:
-        warn(f"{slug}: sinh infographic lỗi ({e}), topic không có ảnh tổng hợp.")
+        warn(f"{slug}: render infographic lỗi ({e}), topic không có ảnh tổng hợp.")
         return None
-    ext = "jpg" if "jpeg" in mime else "png"
-    fname = f"{slug}_infographic.{ext}"
-    (images_dir / fname).write_bytes(data)
+    (images_dir / f"{slug}_infographic.html").write_text(html, encoding="utf-8")
+    fname = f"{slug}_infographic.png"
+    (images_dir / fname).write_bytes(png)
     return {"file": fname, "caption": f"Tổng hợp kiến thức: {row['topic_title']}",
-            "source": "ai_infographic"}
+            "source": "code_infographic_html"}
 
 
 def generate_images_one(doc, row: dict, content_entry: dict, client, images_dir,
                         book_images: bool = False, infographic: bool = True,
-                        image_model: str = "gemini-2.5-flash-image") -> list:
+                        renderer=None) -> list:
     """Sinh danh sách ảnh cho MỘT topic.
 
-    infographic=True (MẶC ĐỊNH): gọi model sinh ảnh để vẽ 1 poster tổng hợp
-      kiến thức từ Learning Object (1 request ảnh/topic, không deterministic).
+    infographic=True (MẶC ĐỊNH): dựng + chụp 1 poster tổng hợp kiến thức từ
+      Learning Object bằng HTML/CSS (0 token, deterministic). renderer:
+      HtmlRenderer dùng chung cho cả lần chạy (xem main.py) — None (vd chưa
+      cài Playwright) thì tự bỏ qua ảnh này, không lỗi.
     book_images=False (MẶC ĐỊNH): không trích + không gọi AI lọc ảnh trang
       sách -> tiết kiệm 1 request img_filter/topic.
-    book_images=True: trích thêm ảnh gốc từ PDF + AI lọc, LIỆT KÊ RIÊNG
-      (không nhúng vào infographic — model sinh ảnh không ghép ảnh có sẵn)."""
+    book_images=True: trích thêm ảnh gốc từ PDF + AI lọc, LIỆT KÊ RIÊNG."""
     images_dir.mkdir(parents=True, exist_ok=True)
     slug = row["topic_slug"]
     kept = []
     if infographic:
-        info_entry = _infographic(row, content_entry, client, images_dir, image_model)
+        info_entry = _infographic(row, content_entry, renderer, images_dir)
         if info_entry:
             kept.append(info_entry)
     if not book_images:

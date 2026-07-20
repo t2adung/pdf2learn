@@ -96,6 +96,63 @@ python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
 
 ---
 
+## Cập nhật 10: REVERT model sinh ảnh -> infographic bằng HTML/CSS + Chromium
+
+Dù đã giảm mật độ chữ (Cập nhật 9), model sinh ảnh vẫn còn sai chính tả
+tiếng Việt trong test thật (vd "trọng tâm" -> "trọng tậm", "thông minh" ->
+"thổng minh", "xây dựng" -> "xay đựng"). Theo yêu cầu, REVERT hẳn hướng
+model sinh ảnh (Cập nhật 8-9), quay lại hướng CODE THUẦN như v3 (SVG) —
+nhưng lần này dùng HTML/CSS thay vì SVG, và chụp thành PNG bằng headless
+Chromium thay vì để trình duyệt tự hiển thị SVG-as-image.
+
+Vì sao HTML/CSS hết hẳn lỗi chính tả: chữ trong ảnh giờ là **text HTML
+thật** — trình duyệt tự render font sẵn có trên máy, không phải AI "vẽ"
+từng nét chữ như pixel. Sai chính tả tiếng Việt trong ảnh AI sinh là
+KHÔNG THỂ xảy ra nữa với cách này. Bonus: CSS tự lo word-wrap/layout, khỏi
+phải tự tính tay như hồi làm SVG (v3) — code gọn hơn hẳn.
+
+- **`infographic_prompt.py`**: XOÁ (không còn dùng model sinh ảnh).
+- **`infographic_html.py` (MỚI, thay `infographic_svg.py` cũ)**: `render(lo,
+  title) -> str` (HTML hoàn chỉnh, có `<style>` nhúng sẵn). Bố cục: banner
+  gradient + pill phụ đề, khối "Câu hỏi khởi động" (nếu có `hook`), các
+  card viền màu đứt nét đánh số kèm icon (emoji từ `icon_hint`) — Khái niệm
+  trọng tâm -> mỗi `sections[i]` (kèm khối công thức) -> Từ khoá cần nhớ ->
+  Lưu ý & mẹo nhớ -> Ghi nhớ nhanh (card liền, tô vàng nổi bật). THUẦN CODE,
+  0 token, escape HTML đúng (`html.escape`) nên không lỗi cú pháp dù nội
+  dung có `&`, `<`, `>`, `"`.
+- **`html_render.py` (MỚI)**: `HtmlRenderer` — bọc Playwright, chụp 1 chuỗi
+  HTML thành PNG (`full_page=True`, chiều cao tự co theo nội dung). Dependency
+  **TUỲ CHỌN** (không có trong requirements.txt): `RendererUnavailable` raise
+  ngay khi khởi tạo nếu chưa cài Playwright/Chromium — caller (main.py) bắt
+  lỗi này, cảnh báo 1 LẦN rồi chạy tiếp KHÔNG có ảnh infographic thay vì sập
+  pipeline. 1 browser dùng chung cho CẢ LẦN CHẠY (khởi động ~1-2s, mở/đóng
+  riêng mỗi topic sẽ chậm không cần thiết) — main.py tạo trước vòng lặp
+  topic, đóng trong `finally` sau vòng lặp.
+- **`stage_images.py`**: `_infographic()` gọi `HtmlRenderer.render_png()`
+  thay vì `client.generate_image()`. Ghi CẢ `.html` (nguồn, phòng khi
+  frontend muốn nhúng HTML trực tiếp) LẪN `.png` (dùng cho pipeline hiện có
+  — `topics.csv`/`manifest.json` vẫn tham chiếu 1 file ảnh như trước, không
+  đổi gì phía export). `--book-images` (ảnh trích từ PDF) không đổi.
+- **`main.py`**: bỏ `--image-model`. `--no-infographic` giờ đúng nghĩa "0
+  token" trở lại. Sửa ước tính request trước khi chạy: infographic không
+  còn tính vào (chỉ `--book-images` mới cộng thêm request).
+- **`gemini.py`**: bỏ `generate_image()` ở cả `Gemini` và `MockGemini`
+  (không còn cần — infographic không gọi AI nữa).
+- **`requirements.txt`**: thêm comment hướng dẫn cài Playwright (tuỳ chọn,
+  không phải dependency cứng — pipeline vẫn chạy đủ mà không có ảnh
+  infographic nếu chưa cài).
+- `test_render.py`: thay check cho `infographic_prompt` bằng check cho
+  `infographic_html.render()` (escape đúng, có đủ khối, raise đúng khi
+  rỗng) + 1 check TUỲ CHỌN render PNG thật qua Chromium (bỏ qua nếu chưa
+  cài Playwright, không làm fail cả suite — giữ đúng lời hứa "0 dependency
+  bắt buộc, 0 token" của file test này).
+
+Nghiệm thu: `python3 test_render.py` (skip nhẹ phần Chromium nếu môi trường
+chưa cài) + chạy full `--dry-run` với Chromium thật, xác nhận PNG sinh ra
+đúng nội dung, chữ tiếng Việt không còn lỗi (vì là text thật, không phải AI vẽ).
+
+---
+
 ## Cập nhật 9: giảm lỗi chính tả trong ảnh + khoá tỉ lệ A4 + fail-fast
 
 Test thật ảnh sinh ra ở Cập nhật 8 cho thấy chữ tiếng Việt sai khá nhiều
