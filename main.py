@@ -80,6 +80,11 @@ def main():
     ap.add_argument("--book-images", action="store_true",
                     help="nhúng ảnh trích từ trang PDF (AI lọc, +1 request/topic). "
                          "Mặc định TẮT: topic không kèm ảnh (0 token, gọn giao diện).")
+    ap.add_argument("--redo-images", action="store_true",
+                    help="CHỈ xoá cache + thư mục ảnh (stage 4) rồi sinh lại — GIỮ "
+                         "NGUYÊN content/câu hỏi đã có, không tốn token stage 3/5/6. "
+                         "Tiện khi bật/tắt --book-images hoặc đổi bộ lọc ảnh mà không "
+                         "muốn sinh lại cả bài học.")
     ap.add_argument("--no-validate", action="store_true",
                     help="bỏ qua pass kiểm chứng đáp án ở stage 5")
     ap.add_argument("--review", action="store_true",
@@ -104,6 +109,9 @@ def main():
 
     if not args.pdf.exists():
         sys.exit(f"Không tìm thấy file: {args.pdf}")
+    if args.redo_images and args.no_images:
+        sys.exit("--redo-images và --no-images mâu thuẫn nhau (một cái đòi sinh lại "
+                 "ảnh, cái kia bảo bỏ qua stage 4).")
 
     # ---- client ----
     if args.dry_run:
@@ -140,6 +148,16 @@ def main():
         f_export_state.unlink()
         warn("Reset trạng thái batch export (các thư mục batch-* cũ đã lỗi thời, "
              "batch mới sẽ đánh số lại từ 01).")
+
+    # ---- --redo-images: CHỈ xoá cache/thư mục ảnh (stage 4), KHÔNG đụng
+    # content/câu hỏi/review -> sinh lại ảnh mà 0 token cho stage 3/5/6.
+    # (nếu --redo-from <= 4 thì đã xoá ở trên rồi, tránh log/xoá 2 lần)
+    if args.redo_images and args.redo_from > 4:
+        if caches[4].exists():
+            caches[4].unlink()
+            log(f"♻️  Xoá cache stage 4: {caches[4].name} (chỉ ảnh, giữ content/câu hỏi)")
+        if images_dir.exists():
+            shutil.rmtree(images_dir)
 
     # ---- Stage 1: TOC ----
     if args.toc_file:

@@ -124,6 +124,14 @@ bằng cách trình bày trực tiếp trong nội dung.
 - `mindmap_svg.py`: XOÁ (không còn nơi nào dùng).
 - `main.py`: `CONTENT_VERSION = 3` (cache cũ cần `--redo-from 3`).
 - `gemini.py`, `test_render.py`: cập nhật mock/fixture theo schema mới.
+- `main.py`: thêm cờ `--redo-images` — CHỈ xoá cache + thư mục ảnh (stage 4)
+  rồi sinh lại, GIỮ NGUYÊN content/câu hỏi đã có (0 token stage 3/5/6).
+  Khác với `--redo-from 4` (xoá luôn cả câu hỏi + review từ stage 4 trở đi).
+  Tiện khi bật/tắt `--book-images` hoặc đổi bộ lọc ảnh mà không muốn sinh
+  lại cả bài học:
+  ```bash
+  python3 main.py sach.pdf --toc-file work/01_toc.json --book-images --redo-images
+  ```
 
 Cache cũ (v1/v2) không đọc được nữa — pipeline sẽ báo lỗi và yêu cầu:
 
