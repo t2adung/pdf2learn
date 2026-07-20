@@ -5,12 +5,18 @@ Object bằng CODE THUẦN (SVG), 0 token AI, không bao giờ lỗi cú pháp.
 KHÔNG nhắm tái tạo y hệt phong cách minh hoạ tay (nhân vật, hoạ tiết trang trí)
 của các tờ tổng hợp kiến thức mẫu — việc đó cần hoạ sĩ hoặc AI vẽ ảnh, không
 thể sinh bằng code hình học. Module này chỉ tái hiện ĐÚNG BỐ CỤC: banner tiêu
-đề, các khối đánh số viền màu kèm icon (emoji từ icon_hint), khối công thức
-tách riêng biến số, khối "Ghi nhớ nhanh" tô màu nổi bật chốt cuối.
+đề, dải ảnh minh hoạ trích từ PDF (nếu có, xem tham số `images`), các khối
+đánh số viền màu kèm icon (emoji từ icon_hint), khối công thức tách riêng
+biến số, khối "Ghi nhớ nhanh" tô màu nổi bật chốt cuối.
 
 Input là Learning Object (xem CONTENT_SCHEMA ở stage_content.py). Field nào
 rỗng thì bỏ qua khối tương ứng — bài không có "sections" vẫn ra ảnh hợp lệ
 miễn có concept_overview hoặc quick_review.
+
+`images` (tham số của render()): list ảnh trích từ PDF, mỗi item
+{file, caption, w, h} — NHÚNG bằng <image href="{file}">, filename tương
+đối nên ảnh phải nằm CÙNG THƯ MỤC với file SVG khi xuất/upload (đúng quy ước
+ảnh trong repo: xem stage_export.py/manifest.json).
 """
 import html
 
@@ -19,6 +25,9 @@ PAD_X = 40
 CONTENT_W = WIDTH - 2 * PAD_X
 BOX_PAD = 20
 GAP = 22
+GALLERY_MAX_H = 190
+GALLERY_GAP = 16
+GALLERY_CAP_H = 34
 FONT = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
 MONO = "'Consolas', 'SF Mono', Menlo, monospace"
 BG = "#fdfaf3"
@@ -162,10 +171,50 @@ def _measure_bullets(items, box_w: float, size: float, lh: float, indent: float 
     return total
 
 
-def render(lo: dict, title: str) -> str:
+def _measure_gallery(images: list) -> float:
+    if not images:
+        return 0.0
+    return GALLERY_MAX_H + GALLERY_CAP_H + 16
+
+
+def _draw_gallery(svg: _Svg, x: float, y: float, w: float, images: list) -> float:
+    n = len(images)
+    if n == 0:
+        return y
+    slot_w = (w - GALLERY_GAP * (n - 1)) / n
+    cx = x
+    for img in images:
+        try:
+            iw, ih = float(img.get("w") or 4), float(img.get("h") or 3)
+        except (TypeError, ValueError):
+            iw, ih = 4.0, 3.0
+        scale = min(slot_w / iw, GALLERY_MAX_H / ih)
+        dw, dh = iw * scale, ih * scale
+        ox, oy = cx + (slot_w - dw) / 2, y + (GALLERY_MAX_H - dh) / 2
+        fname = _esc(img.get("file", ""))
+        svg.parts.append(
+            f'<image href="{fname}" xlink:href="{fname}" x="{ox:.1f}" y="{oy:.1f}" '
+            f'width="{dw:.1f}" height="{dh:.1f}" preserveAspectRatio="xMidYMid meet"/>')
+        svg.rect(ox, oy, dw, dh, fill="none", stroke="#d1d5db", sw=1.5, rx=6)
+        cap = str(img.get("caption", "")).strip()
+        if cap:
+            cap_lines = _wrap(cap, _chars_for(slot_w, 12))[:2]
+            cty = y + GALLERY_MAX_H + 16
+            for ln in cap_lines:
+                svg.text(cx + slot_w / 2, cty, ln, size=12, fill="#6b7280",
+                          anchor="middle", style="italic")
+                cty += 15
+        cx += slot_w + GALLERY_GAP
+    return y + GALLERY_MAX_H + GALLERY_CAP_H + 16
+
+
+def render(lo: dict, title: str, images: list = None) -> str:
     """Learning Object -> chuỗi SVG infographic. Ném ValueError nếu không có
-    field nào để vẽ (caller nên bắt và bỏ qua ảnh cho topic đó)."""
+    field nào để vẽ (caller nên bắt và bỏ qua ảnh cho topic đó).
+    images: xem docstring đầu file — ảnh trích từ PDF để nhúng vào dải hero
+    ngay dưới banner (KHÔNG bắt buộc, bỏ qua nếu rỗng)."""
     lo = lo or {}
+    images = [im for im in (images or []) if im.get("file")]
     blocks = []  # list of dict: kind, heading, icon, body-render-fn
 
     if str(lo.get("concept_overview", "")).strip():
@@ -189,7 +238,7 @@ def render(lo: dict, title: str) -> str:
     if lo.get("quick_review"):
         blocks.append({"kind": "review", "heading": "Ghi nhớ nhanh", "icon": "⭐"})
 
-    if not blocks:
+    if not blocks and not images:
         raise ValueError("Learning Object rỗng — không có field nào để vẽ infographic.")
 
     inner_w = CONTENT_W - 2 * BOX_PAD
@@ -231,6 +280,8 @@ def render(lo: dict, title: str) -> str:
     # ---- pass 1: tính tổng chiều cao ----
     y = 0.0
     y += 108  # banner
+    if images:
+        y += 16 + _measure_gallery(images)
     hook = str(lo.get("hook", "")).strip()
     if hook:
         y += 14 + _measure_para(hook, CONTENT_W - 32, 14, 20) + 18
@@ -257,6 +308,9 @@ def render(lo: dict, title: str) -> str:
               fill="#78350f", anchor="middle")
 
     y = 108
+    if images:
+        y += 16
+        y = _draw_gallery(svg, PAD_X, y, CONTENT_W, images)
     if hook:
         y += 14
         svg.text(PAD_X, y, "🤔  Câu hỏi khởi động", size=13, weight="bold", fill="#92400e")
@@ -325,5 +379,6 @@ def render(lo: dict, title: str) -> str:
 
     svg.parts.append("</svg>")
     header = (f'<svg width="{WIDTH}" height="{total_h:.1f}" '
-              f'viewBox="0 0 {WIDTH} {total_h:.1f}" xmlns="http://www.w3.org/2000/svg">')
+              f'viewBox="0 0 {WIDTH} {total_h:.1f}" xmlns="http://www.w3.org/2000/svg" '
+              f'xmlns:xlink="http://www.w3.org/1999/xlink">')
     return header + "".join(svg.parts)

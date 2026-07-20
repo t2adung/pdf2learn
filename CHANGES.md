@@ -120,6 +120,22 @@ Learning Object, 0 token AI, không bao giờ lỗi cú pháp.
 - `test_render.py`: thêm 6 check cho `infographic_svg` (XML hợp lệ kể cả tiêu
   đề có `&"<>`, escape đúng dấu `|`, raise đúng khi LO rỗng).
 
+**Bổ sung cùng đợt (phản hồi sau khi xem preview):**
+- **Nhúng ảnh PDF thẳng vào infographic**: `infographic_svg.render()` nhận
+  thêm tham số `images` (list `{file, caption, w, h}`) — vẽ 1 dải ảnh minh
+  hoạ (tối đa `GALLERY_MAX=3`, đúng tỉ lệ khung hình) ngay dưới banner tiêu
+  đề, kèm caption. Ảnh tham chiếu bằng filename tương đối (`<image href=...
+  xlink:href=...>`) nên phải nằm CÙNG THƯ MỤC với file SVG (đúng quy ước
+  ảnh sẵn có của repo). `stage_images.py` đảo lại thứ tự: trích + AI lọc
+  ảnh PDF (nếu `--book-images`) TRƯỚC, rồi mới vẽ infographic để nhúng được
+  các ảnh đó vào.
+- **Bỏ ảnh chiếm cả trang**: `_extract_candidates()` giờ so diện tích rect
+  đặt ảnh (`page.get_image_rects`) với diện tích trang; ảnh > 85%
+  (`MAX_PAGE_COVERAGE`) bị loại — sách scan hay nhúng CẢ TRANG làm 1 ảnh,
+  lấy vào sẽ chiếm hết chỗ và không có giá trị minh hoạ. Đã test bằng PDF
+  tổng hợp (fitz, ảnh nhiễu incompressible để qua được `MIN_BYTES`): ảnh
+  18.75% diện tích trang được giữ, ảnh 97% bị loại đúng như kỳ vọng.
+
 Nghiệm thu: `python3 test_render.py` (thuần code) + render thử SVG ra PNG bằng
 Chromium headless để xem trực quan — bố cục khớp với mẫu tham khảo (banner,
 khối đánh số, khối công thức, khối "Ghi nhớ nhanh" tô vàng), chỉ khác là icon

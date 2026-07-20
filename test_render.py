@@ -105,6 +105,24 @@ try:
 except ValueError:
     check("Learning Object rỗng -> raise ValueError", True)
 
+# --- 5. gallery ảnh trích từ PDF, nhúng thẳng vào infographic ---
+gallery = [
+    {"file": "ls-bai-1_01.jpg", "caption": 'Ảnh cổ "quý & hiếm"', "w": 1200, "h": 800},
+    {"file": "ls-bai-1_02.jpg", "caption": "Ảnh chân dung", "w": 900, "h": 1300},
+]
+svg_gallery = render_infographic(LO, "Bài 1: Lịch sử là gì?", images=gallery)
+try:
+    ET.fromstring(svg_gallery)
+    gallery_xml_ok = True
+except ET.ParseError as e:
+    gallery_xml_ok, _gal_err = False, str(e)
+check("gallery: SVG vẫn là XML hợp lệ", gallery_xml_ok, locals().get("_gal_err", ""))
+check("gallery: nhúng đúng 2 ảnh (href + xlink:href)",
+      svg_gallery.count('<image href="ls-bai-1_01.jpg" xlink:href="ls-bai-1_01.jpg"') == 1
+      and svg_gallery.count('<image href="ls-bai-1_02.jpg" xlink:href="ls-bai-1_02.jpg"') == 1)
+check("gallery: chỉ nhúng ảnh -> vẫn ra ảnh hợp lệ (không cần field khác)",
+      bool(render_infographic({}, "Bài rỗng nhưng có ảnh", images=gallery[:1])))
+
 print()
 if fails:
     print(f"❌ {len(fails)} check thất bại: {fails}")
