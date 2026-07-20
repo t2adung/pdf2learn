@@ -239,10 +239,17 @@ def main():
             sys.exit("Không có TTY để xác nhận — chạy với --yes trong môi trường "
                      "không tương tác (Colab/CI).")
 
-    # ---- Guard phiên bản cache content (v1 markdown blob vs v2 LO JSON) ----
-    if content_cached and content_cached.get("_v") != CONTENT_VERSION:
-        sys.exit("Cache 03_content.json thuộc phiên bản cũ (markdown blob).\n"
-                 "Chạy lại với: --redo-from 3")
+    # ---- Guard phiên bản cache content (v1 markdown blob / v2 / v3 LO JSON) ----
+    # --redo-images bỏ qua guard này: stage 4 không đọc field nào của content
+    # (content_markdown() tự nhận diện mọi phiên bản khi render), nên dùng
+    # --redo-images trên content cache cũ vẫn an toàn — không cần sinh lại content.
+    if content_cached and content_cached.get("_v") != CONTENT_VERSION and not args.redo_images:
+        sys.exit("Cache 03_content.json thuộc phiên bản cũ (thiếu concept_overview/"
+                 "quick_review, prompt v3).\n"
+                 "  - Muốn nội dung được viết lại theo prompt mới (khuyến nghị): "
+                 "--redo-from 3\n"
+                 "  - Chỉ muốn sinh lại ảnh, GIỮ NGUYÊN content cũ: thêm --redo-images "
+                 "vào lệnh hiện tại")
 
     # ---- Stage 3-6: TOPIC-MAJOR — xong trọn gói từng topic ----
     # (content -> images -> questions -> review cho topic N rồi mới sang N+1;
@@ -254,7 +261,11 @@ def main():
     from stage_questions import generate_questions_one
 
     content = load_json(caches[3], {}) or {}
-    content["_v"] = CONTENT_VERSION
+    # Không "rửa sạch" tag phiên bản cũ khi đang bypass guard qua --redo-images:
+    # content thực tế vẫn ở shape cũ (chưa sinh lại), đóng dấu _v mới sẽ khiến
+    # lần chạy sau (không có --redo-images) không còn được nhắc nâng cấp nữa.
+    if not content or content.get("_v") == CONTENT_VERSION:
+        content["_v"] = CONTENT_VERSION
     images = load_json(caches[4], {}) or {}
     questions = load_json(caches[5], {}) or {}
     review = load_json(caches[6], {}) or {}
