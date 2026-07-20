@@ -369,7 +369,8 @@ def main():
                pdf_name=args.pdf.name, model="mock" if args.dry_run else args.model,
                only_slugs=set(new_slugs), label=f" [BATCH {n:02d} — {len(new_slugs)} topic MỚI]",
                content_format=args.content_format, subject=args.subject,
-               grade=args.grade, export_json=args.export_json, density=args.density)
+               grade=args.grade, export_json=args.export_json, density=args.density,
+               infographic=not args.no_infographic)
         # copy ảnh của riêng lô này vào batch để test upload trọn gói
         b_img = batch_dir / "images"
         for s in new_slugs:
@@ -401,7 +402,7 @@ def main():
            only_slugs=set(completed), label=" [FULL — snapshot tích luỹ]",
            extra_warnings=qc_warnings, content_format=args.content_format,
            subject=args.subject, grade=args.grade, export_json=args.export_json,
-           density=args.density)
+           density=args.density, infographic=not args.no_infographic)
     if args.review and review:
         from stage_review import write_report
         write_report(review, structure, out_dir / "review_report.md")

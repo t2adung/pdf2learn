@@ -29,7 +29,8 @@ MIN_QUESTIONS = 3
 
 def _compose_content(row: dict, entry: dict, images: list, questions: list,
                      content_format: str = "markdown",
-                     subject: str = "", grade: str = "", density: str = "full") -> str:
+                     subject: str = "", grade: str = "", density: str = "full",
+                     infographic: bool = True) -> str:
     """Sinh giá trị cột `content` từ Learning Object (hoặc blob v1).
 
     content_format:
@@ -39,8 +40,8 @@ def _compose_content(row: dict, entry: dict, images: list, questions: list,
         — compact 1 dòng để sống sót CSV round-trip.
     """
     if content_format == "json":
-        lo = compose_learning_object(row, entry, questions,
-                                     subject=subject, grade=grade)
+        lo = compose_learning_object(row, entry, questions, subject=subject,
+                                     grade=grade, include_infographic=infographic)
         return dumps(lo, compact=True)
     if entry and "content_markdown" in entry:      # cache v1: giữ hành vi cũ
         md = entry["content_markdown"]
@@ -57,10 +58,12 @@ def export(structure: list, content: dict, images: dict, questions: dict,
            out_dir, pdf_name: str, model: str, only_slugs=None, label="",
            extra_warnings=None, content_format: str = "markdown",
            subject: str = "", grade: str = "", export_json: bool = False,
-           density: str = "full"):
+           density: str = "full", infographic: bool = True):
     """only_slugs: nếu khác None, chỉ xuất các topic trong tập này (batch/delta export).
     content_format: "markdown" (mặc định) | "json" — xem _compose_content.
-    export_json: ghi thêm json/{topic_slug}.json (format đích, pretty) cho mỗi topic."""
+    export_json: ghi thêm json/{topic_slug}.json (format đích, pretty) cho mỗi topic.
+    infographic: có nhúng field "infographic_html" vào JSON đích hay không
+      (content_format="json" hoặc export_json=True) — khớp với --no-infographic."""
     if only_slugs is not None:
         structure = [r for r in structure if r["topic_slug"] in only_slugs]
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -87,12 +90,13 @@ def export(structure: list, content: dict, images: dict, questions: dict,
                                             questions.get(slug, []),
                                             content_format=content_format,
                                             subject=subject, grade=grade,
-                                            density=density),
+                                            density=density, infographic=infographic),
             })
             if export_json:
                 lo = compose_learning_object(row, content.get(slug, {}),
                                              questions.get(slug, []),
-                                             subject=subject, grade=grade)
+                                             subject=subject, grade=grade,
+                                             include_infographic=infographic)
                 jdir = out_dir / "json"
                 jdir.mkdir(parents=True, exist_ok=True)
                 (jdir / f"{slug}.json").write_text(dumps(lo), encoding="utf-8")

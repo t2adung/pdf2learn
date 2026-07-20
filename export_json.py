@@ -67,7 +67,8 @@ def map_question(q: dict) -> dict:
 
 def compose_learning_object(row: dict, lo: dict, questions: list,
                             subject: str = "", grade: str = "",
-                            include_quiz: bool = True) -> dict:
+                            include_quiz: bool = True,
+                            include_infographic: bool = True) -> dict:
     """Ghép bản ghi structure + Learning Object cache + câu hỏi -> JSON đích.
 
     Thứ tự key cố định theo file mẫu (deterministic — diff được giữa 2 lần chạy).
@@ -93,10 +94,11 @@ def compose_learning_object(row: dict, lo: dict, questions: list,
         "misconceptions": lo.get("misconceptions", []),
         "quick_review": lo.get("quick_review", []),
     }
-    try:
-        out["infographic_html"] = render_infographic_html(lo, row["topic_title"])
-    except ValueError:
-        out["infographic_html"] = ""  # Learning Object rỗng (vd cache v1 cũ)
+    if include_infographic:
+        try:
+            out["infographic_html"] = render_infographic_html(lo, row["topic_title"])
+        except ValueError:
+            out["infographic_html"] = ""  # Learning Object rỗng (vd cache v1 cũ)
     if include_quiz:
         out["quiz"] = [map_question(q) for q in (questions or [])
                        if q.get("correct_answer") in LETTER_INDEX]
