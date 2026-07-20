@@ -91,14 +91,30 @@ check("prompt nhắc đúng tiêu đề (kể cả ký tự đặc biệt)",
 check("prompt có khối Khái niệm trọng tâm", "Khái niệm trọng tâm" in prompt)
 check("prompt có công thức", "Không có công thức, dùng thử render" in prompt)
 check("prompt có khối Ghi nhớ nhanh (khối cuối, cố định)", '"Ghi nhớ nhanh"' in prompt)
-check("prompt yêu cầu đúng chính tả tiếng Việt", "ĐÚNG CHÍNH TẢ" in prompt)
+check("prompt yêu cầu chép đúng nguyên văn (chống bịa/sai chính tả)",
+      "ĐÚNG NGUYÊN VĂN" in prompt)
+check("prompt khoá tỉ lệ A4 (3:4)", "TỈ LỆ TRANG A4" in prompt and "3:4" in prompt)
 check("dấu | trong key_terms giữ nguyên (prompt văn bản, không cần escape XML)",
       "Quá khứ | Hiện tại" in prompt)
+check("giới hạn tối đa 4 khối nội dung chính -> bỏ khối 5 (Lưu ý & mẹo nhớ)",
+      prompt.count("- Khối số ") == 4 and "Lưu ý & mẹo nhớ" not in prompt)
 try:
     build_infographic_prompt({}, "Bài rỗng")
     check("Learning Object rỗng -> raise ValueError", False)
 except ValueError:
     check("Learning Object rỗng -> raise ValueError", True)
+
+# nhiều bullet vượt ngân sách ký tự/khối -> bỏ NGUYÊN VẸN bullet cuối, KHÔNG
+# cắt cụt giữa câu (cắt giữa câu tiếng Việt dễ đứt gãy từ ghép, vd "lịch sử"
+# -> "lịch"; model được yêu cầu chép nguyên văn nên sẽ chép sai y hệt phần cụt)
+bullet_a = "Bullet đầu tiên khá dài để mau chạm ngân sách ký tự của khối này."
+bullet_b = "Bullet thứ hai cũng dài không kém để chắc chắn tổng vượt quá giới hạn cho phép."
+long_lo = {"sections": [{"heading": "Test", "points": [bullet_a, bullet_b]}]}
+long_prompt = build_infographic_prompt(long_lo, "Test")
+check("bullet giữ NGUYÊN VẸN, không bị cắt cụt giữa câu",
+      bullet_a in long_prompt)
+check("bullet vượt ngân sách bị bỏ HẲN (không xuất hiện dạng cụt lẫn dạng đủ)",
+      bullet_b not in long_prompt and "chắc chắn tổng vượt" not in long_prompt)
 
 print()
 if fails:

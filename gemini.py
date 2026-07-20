@@ -19,6 +19,9 @@ from utils import log, warn
 
 API_ROOT = "https://generativelanguage.googleapis.com"
 INLINE_LIMIT = 15 * 1024 * 1024  # 15MB
+IMAGE_MAX_RETRIES = 2     # request ẢNH tốn tiền hơn text -> fail-fast, không đốt quota
+                          # dò lại nhiều lần cho 1 topic (giống OpenAICompatClient reviewer)
+IMAGE_ASPECT_RATIO = "3:4"   # preset gần nhất với tỉ lệ trang A4 đứng (~1:1.414)
 
 
 class GeminiError(RuntimeError):
@@ -49,9 +52,13 @@ class Gemini:
         self._last_call = time.time()
 
     def _post(self, url: str, payload: dict, headers: Optional[dict] = None,
-              raw_body: Optional[bytes] = None) -> requests.Response:
+              raw_body: Optional[bytes] = None,
+              max_retries: Optional[int] = None) -> requests.Response:
+        """max_retries: override self.max_retries cho request này (vd request
+        ẢNH tốn tiền hơn text -> muốn fail-fast, xem generate_image)."""
+        tries = max_retries if max_retries is not None else self.max_retries
         backoff = 5.0
-        for attempt in range(1, self.max_retries + 1):
+        for attempt in range(1, tries + 1):
             self._throttle()
             try:
                 if raw_body is not None:
@@ -63,7 +70,7 @@ class Gemini:
                 # Lỗi mạng tạm thời (timeout đọc, đứt kết nối, DNS...) -> retry với backoff
                 # thay vì để văng lên làm sập cả pipeline.
                 sleep = backoff + random.uniform(0, 2)
-                warn(f"Lỗi mạng ({type(e).__name__}), retry {attempt}/{self.max_retries} sau {sleep:.0f}s... "
+                warn(f"Lỗi mạng ({type(e).__name__}), retry {attempt}/{tries} sau {sleep:.0f}s... "
                      "[sách scan payload lớn dễ timeout — cân nhắc giảm --dpi]")
                 time.sleep(sleep)
                 backoff = min(backoff * 2, 120)
@@ -85,7 +92,7 @@ class Gemini:
                     m = re.search(r'"quotaId"\s*:\s*"([^"]+)"', body)
                     if m:
                         hint += f" (quotaId: {m.group(1)})"
-                warn(f"HTTP {resp.status_code}, retry {attempt}/{self.max_retries} sau {sleep:.0f}s...{hint}")
+                warn(f"HTTP {resp.status_code}, retry {attempt}/{tries} sau {sleep:.0f}s...{hint}")
                 time.sleep(sleep)
                 backoff = min(backoff * 2, 120)
                 continue
@@ -180,12 +187,21 @@ class Gemini:
     def generate_image(self, prompt: str, tag: str = "infographic",
                        model: Optional[str] = None) -> tuple:
         """Gọi model sinh ảnh (vd gemini-2.5-flash-image). Trả về (bytes, mime).
-        model: override self.model — dùng khi model text mặc định khác model ảnh."""
+        model: override self.model — dùng khi model text mặc định khác model ảnh.
+
+        Fail-fast (IMAGE_MAX_RETRIES thay vì self.max_retries): 1 request ảnh
+        tốn tiền/quota hơn nhiều so với 1 request text, nên lỗi liên tục
+        (vd bị chặn nội dung, model tạm quá tải) KHÔNG đáng để dò lại nhiều
+        lần cho cùng 1 topic — bỏ qua ảnh đó nhanh, để dành quota cho các
+        topic khác (caller stage_images.py bắt exception và skip)."""
         url = (f"{API_ROOT}/v1beta/models/{model or self.model}"
                f":generateContent?key={self.api_key}")
         payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                   "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]}}
-        resp = self._post(url, payload)
+                   "generationConfig": {
+                       "responseModalities": ["TEXT", "IMAGE"],
+                       "imageConfig": {"aspectRatio": IMAGE_ASPECT_RATIO},
+                   }}
+        resp = self._post(url, payload, max_retries=IMAGE_MAX_RETRIES)
         data = resp.json()
         um = data.get("usageMetadata", {})
         self._record(tag, um.get("promptTokenCount", 0),

@@ -96,6 +96,53 @@ python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
 
 ---
 
+## Cập nhật 9: giảm lỗi chính tả trong ảnh + khoá tỉ lệ A4 + fail-fast
+
+Test thật ảnh sinh ra ở Cập nhật 8 cho thấy chữ tiếng Việt sai khá nhiều
+(vd "trọng tâm" -> "trọng tậm", "thông minh" -> "thổng minh", "xây dựng" ->
+"xay đựng") — càng nhiều chữ nhỏ trong ảnh, model càng dễ viết sai.
+
+- `infographic_prompt.py`:
+  - Thêm `MAX_BLOCKS=4` (khối nội dung chính, chưa tính "Ghi nhớ nhanh") +
+    `_fit_bullets()` giới hạn `MAX_BULLETS_PER_BLOCK=3` và tổng
+    `MAX_CHARS_PER_BLOCK=140` ký tự/khối — GIẢM TỔNG LƯỢNG CHỮ đưa vào ảnh.
+    **Quan trọng**: `_fit_bullets()` bỏ NGUYÊN VẸN cả bullet cuối nếu vượt
+    ngân sách, KHÔNG cắt giữa câu. Bản đầu tiên của cập nhật này dùng
+    `str.split()[:9]` để cắt theo số từ — LỖI: tiếng Việt có nhiều từ ghép
+    2 âm tiết cách nhau bằng dấu cách (vd "lịch sử", "trọng tâm"), cắt theo
+    số từ dễ cắt đứt giữa 1 từ ghép (vd "lịch sử" -> chỉ còn "lịch"); vì
+    prompt yêu cầu model chép ĐÚNG NGUYÊN VĂN nên bullet cụt sẽ bị chép sai
+    y hệt phần cụt đó — phản tác dụng, tự tạo ra đúng loại lỗi muốn tránh.
+    Đã sửa bằng cách bỏ hẳn bullet thay vì cắt dở.
+  - Khoá tỉ lệ khung ảnh: nêu rõ trong prompt "ĐÚNG TỈ LỆ TRANG A4 ĐỨNG
+    (210mm x 297mm, ~3:4, vd khung 1240x1754px)" thay vì chỉ nói chung
+    chung "khổ dọc".
+  - Siết khối "YÊU CẦU CHỮ VIẾT" lên ưu tiên cao nhất: chép đúng từng dấu
+    thanh, không đoán mò, vẽ khung/chữ nhỏ lại thay vì tự cắt/sửa chữ khi
+    không vừa khung, chữ nội dung dùng font thẳng dễ đọc (chỉ tiêu đề lớn
+    mới dùng font trang trí — chữ nhỏ font trang trí dễ đọc/viết sai hơn).
+- `gemini.py`:
+  - `generate_image()` set `generationConfig.imageConfig.aspectRatio = "3:4"`
+    (preset chuẩn của Gemini image gần nhất với tỉ lệ A4) — khoá tỉ lệ ở cả
+    tham số API lẫn mô tả trong prompt, không chỉ dựa vào prompt.
+  - Fail-fast: `IMAGE_MAX_RETRIES=2` (thay vì `self.max_retries` mặc định 6)
+    cho riêng request ảnh — 1 request ảnh tốn quota/tiền hơn nhiều so với 1
+    request text, nên lỗi lặp lại (bị chặn nội dung, model quá tải...)
+    KHÔNG đáng để dò lại nhiều lần cho CÙNG 1 topic; bỏ qua nhanh, dành
+    quota cho topic khác. `_post()` nhận thêm `max_retries` override thay
+    vì luôn dùng field cố định của client.
+  - Đã có sẵn từ Cập nhật 8 (giữ nguyên, không đổi): `_infographic()` ở
+    `stage_images.py` bắt mọi exception từ `generate_image()` và BỎ QUA ảnh
+    của topic đó (`return None`) thay vì làm sập cả pipeline — đúng yêu cầu
+    "nếu sai thì bỏ qua". Cache stage 4 theo slug cũng tự nhiên tránh gọi
+    lại API cho topic đã có ảnh (hoặc đã thử và lưu kết quả rỗng) giữa các
+    lần chạy — không cần thêm cơ chế chống trùng lặp riêng.
+- `test_render.py`: cập nhật check theo `_fit_bullets` (giữ nguyên bullet
+  đủ ngân sách, bỏ hẳn bullet vượt ngân sách — không còn dạng cắt cụt giữa
+  câu), thêm check khoá tỉ lệ A4/3:4 trong prompt.
+
+---
+
 ## Cập nhật 8: đổi sang MODEL SINH ẢNH thay vì vẽ SVG (theo yêu cầu, xem ảnh mẫu)
 
 Cập nhật 7 vẽ infographic bằng SVG thuần code — bố cục đúng (banner, khối
