@@ -96,6 +96,37 @@ python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
 
 ---
 
+## Cập nhật 7: vẽ infographic tổng hợp kiến thức bằng code (thay thế mindmap)
+
+Sau Cập nhật 6, mặc định topic không còn ảnh nào (mindmap bị bỏ, `--book-images`
+tắt). Cập nhật này thêm lại một ảnh — nhưng đúng thứ người dùng thật sự muốn:
+một tờ "Tổng hợp kiến thức" dạng infographic, vẽ THUẦN CODE (SVG) từ chính
+Learning Object, 0 token AI, không bao giờ lỗi cú pháp.
+
+- `infographic_svg.py` (MỚI): `render(lo, title) -> str` (SVG). Bố cục: banner
+  tiêu đề + pill "TỔNG HỢP KIẾN THỨC", khối "Câu hỏi khởi động" (nếu có `hook`),
+  rồi các khối đánh số viền màu (dashed) kèm icon (`icon_hint`): Khái niệm
+  trọng tâm -> mỗi `sections[i]` (kèm khối công thức tách biến số nếu có) ->
+  Từ khoá cần nhớ -> Lưu ý & mẹo nhớ (gộp real_life/misconceptions/memory_hooks)
+  -> Ghi nhớ nhanh (tô vàng nổi bật, khác các khối khác). Field nào rỗng thì bỏ
+  qua khối đó; rỗng hết thì `raise ValueError` (không có gì để vẽ).
+  KHÔNG nhắm tái tạo minh hoạ nhân vật vẽ tay của các mẫu tham khảo — chỉ tái
+  hiện bố cục (xem docstring đầu file để biết trade-off & lý do).
+- `stage_images.py`: thêm `_infographic()` + tham số `infographic=True` (mặc
+  định BẬT) cho `generate_images_one()` — vẽ ảnh này TRƯỚC, độc lập với
+  `book_images`. Cache v1/v2 thiếu field mới (concept_overview/quick_review)
+  vẫn vẽ được, miễn còn `sections`/`key_terms`.
+- `main.py`: thêm cờ `--no-infographic` (tắt khối này nếu không cần).
+- `test_render.py`: thêm 6 check cho `infographic_svg` (XML hợp lệ kể cả tiêu
+  đề có `&"<>`, escape đúng dấu `|`, raise đúng khi LO rỗng).
+
+Nghiệm thu: `python3 test_render.py` (thuần code) + render thử SVG ra PNG bằng
+Chromium headless để xem trực quan — bố cục khớp với mẫu tham khảo (banner,
+khối đánh số, khối công thức, khối "Ghi nhớ nhanh" tô vàng), chỉ khác là icon
+emoji + hình khối thay vì minh hoạ nhân vật vẽ tay.
+
+---
+
 ## Cập nhật 6: bỏ mindmap, prompt v3 sinh động hơn (kiểu tờ tóm tắt infographic)
 
 Mục tiêu: nội dung bài học dễ hiểu và sinh động hơn — bám theo bố cục các tờ

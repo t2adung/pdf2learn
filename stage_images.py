@@ -1,18 +1,19 @@
 # -*- coding: utf-8 -*-
 """Stage 4 (v3): Hình minh hoạ.
 
-Trích ảnh gốc từ chính các trang PDF của topic (PyMuPDF) -> AI vision lọc bỏ
-logo/trang trí, giữ ảnh có giá trị minh hoạ, kèm caption. Chỉ chạy khi bật
---book-images; mặc định TẮT (xem generate_images_one).
-
-v3 bỏ fallback vẽ sơ đồ tư duy (mindmap) bằng code — nội dung sinh động hơn
-giờ nằm trong chính Learning Object (concept_overview/formula/quick_review,
-xem stage_content.py), không cần ảnh thay thế nữa.
+Hai nguồn ảnh ĐỘC LẬP, có thể bật/tắt riêng:
+1. Infographic "tổng hợp kiến thức" — vẽ THUẦN CODE (SVG) từ chính Learning
+   Object (concept_overview/sections+formula/quick_review, xem
+   infographic_svg.py). 0 token, mặc định BẬT — đây là ảnh chính của topic.
+2. Ảnh gốc trích từ trang PDF (PyMuPDF) -> AI vision lọc bỏ logo/trang trí,
+   giữ ảnh có giá trị minh hoạ. Chỉ chạy khi bật --book-images (mặc định TẮT,
+   tốn thêm 1 request img_filter/topic).
 
 Naming convention (deterministic, sinh bằng code): {topic_slug}_{nn}.{ext}
 """
 import fitz
 
+from infographic_svg import render as render_infographic
 from utils import log, warn
 
 MIN_DIM = 160          # bỏ ảnh quá nhỏ (icon, bullet trang trí)
@@ -74,16 +75,34 @@ def _extract_candidates(doc: fitz.Document, page_start: int, page_end: int) -> l
     return out
 
 
-def generate_images_one(doc, row: dict, client, images_dir,
-                        book_images: bool = False) -> list:
+def _infographic(row: dict, content_entry: dict, images_dir, seq: int):
+    """Vẽ infographic tổng hợp kiến thức bằng code. Trả về entry ảnh hoặc None.
+    0 token, không bao giờ lỗi cú pháp (SVG do code sinh, không phải AI)."""
+    try:
+        svg = render_infographic(content_entry or {}, row["topic_title"])
+    except ValueError:
+        return None  # Learning Object rỗng (vd cache v1 cũ) -> không có gì để vẽ
+    fname = f"{row['topic_slug']}_{seq:02d}.svg"
+    (images_dir / fname).write_text(svg, encoding="utf-8")
+    return {"file": fname, "caption": f"Tổng hợp kiến thức: {row['topic_title']}",
+            "source": "code_infographic"}
+
+
+def generate_images_one(doc, row: dict, content_entry: dict, client, images_dir,
+                        book_images: bool = False, infographic: bool = True) -> list:
     """Sinh danh sách ảnh cho MỘT topic.
 
+    infographic=True (MẶC ĐỊNH): vẽ ảnh tổng hợp kiến thức bằng code (0 token).
     book_images=False (MẶC ĐỊNH): không trích + không gọi AI lọc ảnh trang
-      sách -> topic không có ảnh, tiết kiệm 1 request img_filter/topic.
-    book_images=True: bật trích ảnh gốc + AI lọc."""
+      sách -> tiết kiệm 1 request img_filter/topic.
+    book_images=True: bật thêm trích ảnh gốc + AI lọc."""
     images_dir.mkdir(parents=True, exist_ok=True)
     slug = row["topic_slug"]
     kept = []
+    if infographic:
+        info_entry = _infographic(row, content_entry, images_dir, seq=1)
+        if info_entry:
+            kept.append(info_entry)
     if not book_images:
         return kept
     cands = _extract_candidates(doc, row["page_start"], row["page_end"])

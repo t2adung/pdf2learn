@@ -6,7 +6,8 @@ Pipeline 6 stage, kết quả trung gian lưu ở runs/<tên-pdf>/work/:
   1. TOC        : bookmark PDF (code) hoặc AI suy ra mục lục
   2. Structure  : chuẩn hoá + sinh slug/order (code, deterministic)
   3. Content    : mỗi topic -> Markdown bài học + key_points (AI, chunk theo trang)
-  4. Images     : trích ảnh PDF + AI lọc; fallback sinh SVG diagram
+  4. Images     : vẽ infographic tổng hợp kiến thức bằng code (0 token, mặc định);
+                  tuỳ chọn trích thêm ảnh gốc PDF + AI lọc (--book-images)
   5. Questions  : MCQ theo key_points (coverage) + pass validation đáp án
   6. Export     : CSV UTF-8 BOM đúng template + manifest.json
 
@@ -77,9 +78,12 @@ def main():
                     help="sinh content + câu hỏi trong 1 request/topic "
                          "(tiết kiệm ~50% request stage 3+5; xem README về trade-off)")
     ap.add_argument("--no-images", action="store_true", help="bỏ qua stage 4")
+    ap.add_argument("--no-infographic", action="store_true",
+                    help="tắt vẽ ảnh infographic tổng hợp kiến thức (0 token, code vẽ "
+                         "SVG từ Learning Object). Mặc định BẬT — đây là ảnh chính của topic.")
     ap.add_argument("--book-images", action="store_true",
-                    help="nhúng ảnh trích từ trang PDF (AI lọc, +1 request/topic). "
-                         "Mặc định TẮT: topic không kèm ảnh (0 token, gọn giao diện).")
+                    help="nhúng THÊM ảnh trích từ trang PDF (AI lọc, +1 request/topic). "
+                         "Mặc định TẮT.")
     ap.add_argument("--redo-images", action="store_true",
                     help="CHỈ xoá cache + thư mục ảnh (stage 4) rồi sinh lại — GIỮ "
                          "NGUYÊN content/câu hỏi đã có, không tốn token stage 3/5/6. "
@@ -293,8 +297,9 @@ def main():
                 content[slug] = generate_content_one(doc, row, client, dpi=args.dpi)
                 save_json(caches[3], content)
             if not args.no_images and slug not in images:
-                images[slug] = generate_images_one(doc, row, client, images_dir,
-                                                   book_images=args.book_images)
+                images[slug] = generate_images_one(doc, row, content[slug], client,
+                                                   images_dir, book_images=args.book_images,
+                                                   infographic=not args.no_infographic)
                 save_json(caches[4], images)
             if slug not in questions:
                 qs, dropped = generate_questions_one(row, content[slug], client,

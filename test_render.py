@@ -5,7 +5,9 @@ KHÔNG gọi API, KHÔNG cần key. 0 token.
 import csv
 import io
 import sys
+import xml.etree.ElementTree as ET
 
+from infographic_svg import render as render_infographic
 from render_markdown import render
 
 LO = {
@@ -83,6 +85,26 @@ check("markdown sống sót round-trip CSV", back == md)
 md2 = render(LO, use_tables=False)
 check("use_tables=False không sinh bảng", "| --- |" not in md2 and "❌" in md2)
 
+# --- 4. infographic SVG (code vẽ, 0 token) ---
+svg = render_infographic(LO, 'Bài 1: Lịch sử là gì? & "khoa học" <thử ký tự lạ>')
+check("SVG mở/đóng đúng", svg.startswith("<svg") and svg.rstrip().endswith("</svg>"))
+try:
+    ET.fromstring(svg)
+    xml_ok = True
+except ET.ParseError as e:
+    xml_ok, _xml_err = False, str(e)
+check("SVG là XML hợp lệ (kể cả tiêu đề có &, \", <, >)", xml_ok,
+      locals().get("_xml_err", ""))
+check("có khối Khái niệm trọng tâm", "Khái niệm trọng tâm" in svg)
+check("có công thức trong khối code", "Không có công thức, dùng thử render" in svg)
+check("có khối Ghi nhớ nhanh", "Ghi nhớ nhanh" in svg)
+check("dấu | trong key_terms không phá XML (đã escape)", "Quá khứ | Hiện tại" in svg)
+try:
+    render_infographic({}, "Bài rỗng")
+    check("Learning Object rỗng -> raise ValueError", False)
+except ValueError:
+    check("Learning Object rỗng -> raise ValueError", True)
+
 print()
 if fails:
     print(f"❌ {len(fails)} check thất bại: {fails}")
@@ -90,4 +112,6 @@ if fails:
 print("✅ Tất cả check đã qua. 0 token đã dùng.")
 with open("preview_content.md", "w", encoding="utf-8") as f:
     f.write(md)
-print("   Xem: preview_content.md")
+with open("preview_infographic.svg", "w", encoding="utf-8") as f:
+    f.write(svg)
+print("   Xem: preview_content.md, preview_infographic.svg")
