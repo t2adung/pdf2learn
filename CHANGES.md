@@ -96,6 +96,29 @@ python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
 
 ---
 
+## Cập nhật 11: nhúng thẳng infographic_html vào JSON xuất (không cần file rời)
+
+Theo yêu cầu, thêm field `infographic_html` (string) vào JSON đích của
+`export_json.py` (áp dụng cho cả `--export-json` lẫn `--content-format
+json`) — chứa NGUYÊN VĂN trang HTML infographic (đủ `<!doctype>`/`<style>`),
+để frontend dùng thẳng (vd `<iframe srcdoc={value}>`) không cần fetch file
+`.html` riêng trong `images/`.
+
+- `export_json.py`: gọi lại `infographic_html.render(lo, title)` NGAY TẠI
+  bước export — THUẦN CODE, 0 token, deterministic, không cần lưu trung
+  gian (hàm đã đủ rẻ để gọi lại bất cứ lúc nào, giống cách `render_markdown`
+  đã làm với content). Rỗng (`""`) nếu Learning Object không có gì để vẽ.
+- **Không dùng base64**: string HTML nhúng thẳng, dựa vào `json.dumps` tự
+  escape chuẩn (dấu `"`, xuống dòng...). Base64 chỉ làm phình kích thước
+  (~33%) và bắt frontend phải decode thêm 1 bước — không cần thiết vì JSON
+  string đã an toàn 100% qua CSV round-trip (đã test tay: nhúng chuỗi có
+  `"`, `&`, `<>`, xuống dòng, ghi CSV, đọc lại, `json.loads` ra đúng y hệt).
+- File `.html`/`.png` rời trong `output/images/` (từ Cập nhật 10) KHÔNG đổi
+  — đây là nguồn ĐỘC LẬP thứ hai, dùng chung 1 hàm `render()` thuần code
+  nên luôn ra kết quả giống hệt nhau, không cần đồng bộ 2 chiều.
+
+---
+
 ## Cập nhật 10: REVERT model sinh ảnh -> infographic bằng HTML/CSS + Chromium
 
 Dù đã giảm mật độ chữ (Cập nhật 9), model sinh ảnh vẫn còn sai chính tả

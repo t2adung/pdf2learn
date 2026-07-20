@@ -10,6 +10,7 @@ Format đích (theo mẫu lich_su_la_gi_learning_object.json):
   "sections":       [{heading, icon_hint, formula?, points}],
   "real_life", "memory_hooks", "quick_review",
   "misconceptions": [{wrong, correct}],
+  "infographic_html": "<!doctype html>...",   # xem bên dưới
   "quiz": [{question, options[4], answer_index, explanation, bloom, difficulty}]
 }
 
@@ -20,9 +21,21 @@ Khác biệt so với dữ liệu nội bộ (và lý do):
 - key_points: GIỮ NỘI BỘ, không xuất — nó là công cụ đảm bảo coverage câu hỏi
              (Stage 5) và mốc đối chiếu cho reviewer (Stage 6), không phải nội
              dung hiển thị cho người học.
+- infographic_html: NHÚNG THẲNG cả trang HTML (đủ <!doctype>/<style>) làm 1
+             string JSON — không phải file rời như stage_images.py ghi ra
+             images/. Gọi lại infographic_html.render() ngay tại bước export
+             (THUẦN CODE, 0 token, deterministic — không cần lưu trung gian).
+             "Mã hoá" ở đây chỉ là escape chuỗi JSON chuẩn (json.dumps tự lo
+             dấu ", xuống dòng...) — KHÔNG base64: base64 sẽ chỉ làm bloat
+             kích thước (~33%) trong khi JSON string đã an toàn 100% qua CSV
+             round-trip (đã có test), và frontend nhận về là dùng được ngay
+             (vd `<iframe srcdoc={value}>`) mà không cần decode gì thêm.
+             Rỗng ("") nếu Learning Object không có gì để vẽ.
 """
 import json
 import re
+
+from infographic_html import render as render_infographic_html
 
 PROMPT_VERSION = "v3"
 
@@ -80,6 +93,10 @@ def compose_learning_object(row: dict, lo: dict, questions: list,
         "misconceptions": lo.get("misconceptions", []),
         "quick_review": lo.get("quick_review", []),
     }
+    try:
+        out["infographic_html"] = render_infographic_html(lo, row["topic_title"])
+    except ValueError:
+        out["infographic_html"] = ""  # Learning Object rỗng (vd cache v1 cũ)
     if include_quiz:
         out["quiz"] = [map_question(q) for q in (questions or [])
                        if q.get("correct_answer") in LETTER_INDEX]
