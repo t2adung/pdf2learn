@@ -96,6 +96,43 @@ python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
 
 ---
 
+## Cập nhật 6: bỏ mindmap, prompt v3 sinh động hơn (kiểu tờ tóm tắt infographic)
+
+Mục tiêu: nội dung bài học dễ hiểu và sinh động hơn — bám theo bố cục các tờ
+"Tổng hợp kiến thức" giáo viên hay tự làm tay (khối mở đầu nêu trọng tâm,
+công thức tách riêng biến số, khối chốt cuối bài). Bỏ hẳn field `mindmap` —
+sơ đồ tư duy khó đọc trên giao diện text/markdown và không tăng độ dễ hiểu
+bằng cách trình bày trực tiếp trong nội dung.
+
+- `stage_content.py`: `CONTENT_SCHEMA`/`CONTENT_PROMPT` v3.
+  - Bỏ field `mindmap` (schema + prompt + required).
+  - Thêm `concept_overview` (1-2 câu trọng tâm cả bài, mở đầu bài học).
+  - Thêm `quick_review` (2-4 câu chốt ngắn cuối bài, kiểu "Ghi nhớ nhanh").
+  - `sections[].formula` (tuỳ chọn): `{expression, variables: [{symbol, meaning}]}`
+    — chỉ thêm khi mục có công thức/định luật thật trong tài liệu.
+  - Thêm hướng dẫn văn phong: ưu tiên so sánh/ví dụ cụ thể gắn đời sống học
+    sinh thay vì định nghĩa hàn lâm.
+- `render_markdown.py`: render `concept_overview` (khối đầu, blockquote),
+  `formula` trong section (khối code `Công thức:` + bullet biến số),
+  `quick_review` (khối cuối, trước phần ảnh). Cập nhật `DENSITY` — mức
+  `minimal` giờ giữ Khái niệm trọng tâm + Ghi nhớ nhanh thay vì mindmap.
+- `stage_images.py`: bỏ hẳn `_mindmap_svg` (vẽ SVG từ field `mindmap`).
+  Mặc định (`--book-images` tắt) topic giờ KHÔNG có ảnh nào — trước đây
+  luôn có ít nhất mindmap SVG. Bật `--book-images` nếu cần ảnh trích từ PDF.
+- `export_json.py`: bỏ `mindmap_mermaid`; xuất thêm `concept_overview`,
+  `quick_review`, `sections[].formula`. `prompt_version` -> `"v3"`.
+- `mindmap_svg.py`: XOÁ (không còn nơi nào dùng).
+- `main.py`: `CONTENT_VERSION = 3` (cache cũ cần `--redo-from 3`).
+- `gemini.py`, `test_render.py`: cập nhật mock/fixture theo schema mới.
+
+Cache cũ (v1/v2) không đọc được nữa — pipeline sẽ báo lỗi và yêu cầu:
+
+```bash
+python3 main.py sach.pdf --redo-from 3
+```
+
+---
+
 ## Cập nhật 5: chỉ giữ mindmap SVG + hậu xử lý CSV có sẵn
 
 Ảnh trang sách (.jpg trích từ PDF) ít giá trị trên giao diện học và làm bài dài.
