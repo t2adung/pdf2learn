@@ -96,6 +96,29 @@ python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
 
 ---
 
+## Cập nhật 12: cảnh báo bẫy --redo-from lặp lại sau khi bị ngắt giữa chừng
+
+Ghi nhận từ người dùng: chạy `--redo-from 3`, bị ngắt giữa chừng (Ctrl+C,
+mất mạng...), chạy lại NGUYÊN command cũ (vẫn còn `--redo-from 3`) tưởng là
+resume nhưng thực ra `--redo-from` xoá cache VÔ ĐIỀU KIỆN mỗi lần chạy có cờ
+này — kể cả phần vừa sinh dở ở lần trước cũng bị xoá sạch, tốn token 2 lần
+cho cùng số topic.
+
+Không đổi hành vi cốt lõi của `--redo-from` (vẫn xoá-rồi-sinh-lại đúng như
+tên gọi, cần thiết cho use case "tôi muốn ép sinh lại"), chỉ thêm 1 cảnh báo
+sớm khi phát hiện tình huống này: `03_content.json` đã tồn tại, đã đúng
+`CONTENT_VERSION` hiện tại (nghĩa là lần trước `--redo-from` đã áp dụng
+thành công một phần), VÀ có ít nhất 1 topic đã xong — in cảnh báo rõ số
+topic sẽ bị xoá + hướng dẫn bỏ `--redo-from` để resume, đủ thời gian Ctrl+C
+trước khi thật sự xoá.
+
+Quy tắc dùng đúng: `--redo-from N` chỉ cần ở LẦN CHẠY ĐẦU TIÊN của một đợt
+sinh lại. Mọi lần chạy lại sau đó (kể cả do bị ngắt giữa chừng) — BỎ cờ này
+đi, cơ chế resume mặc định (dựa vào cache + `_v` đã đúng) sẽ tự tiếp tục
+đúng phần dở dang, 0 token cho phần đã xong.
+
+---
+
 ## Cập nhật 11: nhúng thẳng infographic_html vào JSON xuất (không cần file rời)
 
 Theo yêu cầu, thêm field `infographic_html` (string) vào JSON đích của

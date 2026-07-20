@@ -145,6 +145,21 @@ def main():
               5: work / "05_questions.json", 6: work / "06_review.json"}
     f_export_state = work / "07_export_state.json"
 
+    # ---- Cảnh báo bẫy hay gặp: --redo-from XOÁ CACHE VÔ ĐIỀU KIỆN mỗi lần
+    # chạy lệnh có cờ này — không phải chỉ lần đầu. Nếu lần trước --redo-from 3
+    # bị ngắt giữa chừng (Ctrl+C, mất mạng...) và người dùng chạy lại NGUYÊN
+    # command cũ (vẫn còn --redo-from 3), cache vừa sinh dở cũng bị xoá sạch,
+    # tưởng là "resume" nhưng thực ra sinh lại từ đầu, tốn token 2 lần.
+    if args.redo_from <= 3 and caches[3].exists():
+        _prev_content = load_json(caches[3], {}) or {}
+        _prev_done = [k for k in _prev_content if k != "_v"]
+        if _prev_content.get("_v") == CONTENT_VERSION and _prev_done:
+            warn(f"⚠️  03_content.json đã có {len(_prev_done)} topic theo ĐÚNG prompt mới nhất "
+                 "(có thể do lần chạy --redo-from trước bị ngắt giữa chừng). Lệnh hiện tại sẽ "
+                 f"XOÁ HẾT {len(_prev_done)} topic đó và sinh lại TỪ ĐẦU, tốn lại token.")
+            warn("   Muốn TIẾP TỤC phần dở dang thay vì sinh lại: bỏ --redo-from khỏi lệnh rồi "
+                 "chạy lại. Ctrl+C ngay bây giờ nếu đây không phải ý bạn.")
+
     # ---- --redo-from: xoá cache từ stage N trở đi ----
     for n, f in caches.items():
         if n >= args.redo_from and f.exists():
