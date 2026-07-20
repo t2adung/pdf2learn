@@ -95,21 +95,26 @@ def _extract_candidates(doc: fitz.Document, page_start: int, page_end: int) -> l
 
 
 def _infographic(row: dict, content_entry: dict, renderer, images_dir):
-    """Dựng HTML rồi chụp PNG bằng headless Chromium. Trả về entry ảnh hoặc
-    None. Ghi cả .html (nguồn) lẫn .png (dùng cho pipeline) cùng thư mục."""
-    if renderer is None:
-        return None
+    """Dựng HTML (THUẦN CODE, 0 dependency) rồi chụp PNG bằng headless
+    Chromium NẾU renderer khả dụng. Trả về entry ảnh (PNG) hoặc None.
+
+    File .html LUÔN được ghi ra đĩa nếu có nội dung — kể cả khi chưa cài
+    Playwright (renderer=None) hoặc chụp PNG lỗi — để dùng thủ công/làm tư
+    liệu cho frontend nhúng HTML trực tiếp sau này. Chỉ phần PNG (dùng làm
+    "ảnh" cho topics.csv/manifest.json) mới cần renderer."""
     try:
         html = render_infographic_html(content_entry or {}, row["topic_title"])
     except ValueError:
         return None  # Learning Object rỗng (vd cache v1 cũ) -> không có gì để vẽ
     slug = row["topic_slug"]
+    (images_dir / f"{slug}_infographic.html").write_text(html, encoding="utf-8")
+    if renderer is None:
+        return None
     try:
         png = renderer.render_png(html)
     except Exception as e:
-        warn(f"{slug}: render infographic lỗi ({e}), topic không có ảnh tổng hợp.")
+        warn(f"{slug}: render PNG infographic lỗi ({e}) — vẫn giữ file .html.")
         return None
-    (images_dir / f"{slug}_infographic.html").write_text(html, encoding="utf-8")
     fname = f"{slug}_infographic.png"
     (images_dir / fname).write_bytes(png)
     return {"file": fname, "caption": f"Tổng hợp kiến thức: {row['topic_title']}",
