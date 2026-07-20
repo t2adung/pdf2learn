@@ -5,9 +5,8 @@ KHÔNG gọi API, KHÔNG cần key. 0 token.
 import csv
 import io
 import sys
-import xml.etree.ElementTree as ET
 
-from infographic_svg import render as render_infographic
+from infographic_prompt import build_prompt as build_infographic_prompt
 from render_markdown import render
 
 LO = {
@@ -85,43 +84,21 @@ check("markdown sống sót round-trip CSV", back == md)
 md2 = render(LO, use_tables=False)
 check("use_tables=False không sinh bảng", "| --- |" not in md2 and "❌" in md2)
 
-# --- 4. infographic SVG (code vẽ, 0 token) ---
-svg = render_infographic(LO, 'Bài 1: Lịch sử là gì? & "khoa học" <thử ký tự lạ>')
-check("SVG mở/đóng đúng", svg.startswith("<svg") and svg.rstrip().endswith("</svg>"))
+# --- 4. prompt mô tả ảnh cho model sinh infographic (thuần code, 0 token) ---
+prompt = build_infographic_prompt(LO, 'Bài 1: Lịch sử là gì? & "khoa học" <thử ký tự lạ>')
+check("prompt nhắc đúng tiêu đề (kể cả ký tự đặc biệt)",
+      'tiêu đề lớn "Bài 1: Lịch sử là gì? & "khoa học" <thử ký tự lạ>"' in prompt)
+check("prompt có khối Khái niệm trọng tâm", "Khái niệm trọng tâm" in prompt)
+check("prompt có công thức", "Không có công thức, dùng thử render" in prompt)
+check("prompt có khối Ghi nhớ nhanh (khối cuối, cố định)", '"Ghi nhớ nhanh"' in prompt)
+check("prompt yêu cầu đúng chính tả tiếng Việt", "ĐÚNG CHÍNH TẢ" in prompt)
+check("dấu | trong key_terms giữ nguyên (prompt văn bản, không cần escape XML)",
+      "Quá khứ | Hiện tại" in prompt)
 try:
-    ET.fromstring(svg)
-    xml_ok = True
-except ET.ParseError as e:
-    xml_ok, _xml_err = False, str(e)
-check("SVG là XML hợp lệ (kể cả tiêu đề có &, \", <, >)", xml_ok,
-      locals().get("_xml_err", ""))
-check("có khối Khái niệm trọng tâm", "Khái niệm trọng tâm" in svg)
-check("có công thức trong khối code", "Không có công thức, dùng thử render" in svg)
-check("có khối Ghi nhớ nhanh", "Ghi nhớ nhanh" in svg)
-check("dấu | trong key_terms không phá XML (đã escape)", "Quá khứ | Hiện tại" in svg)
-try:
-    render_infographic({}, "Bài rỗng")
+    build_infographic_prompt({}, "Bài rỗng")
     check("Learning Object rỗng -> raise ValueError", False)
 except ValueError:
     check("Learning Object rỗng -> raise ValueError", True)
-
-# --- 5. gallery ảnh trích từ PDF, nhúng thẳng vào infographic ---
-gallery = [
-    {"file": "ls-bai-1_01.jpg", "caption": 'Ảnh cổ "quý & hiếm"', "w": 1200, "h": 800},
-    {"file": "ls-bai-1_02.jpg", "caption": "Ảnh chân dung", "w": 900, "h": 1300},
-]
-svg_gallery = render_infographic(LO, "Bài 1: Lịch sử là gì?", images=gallery)
-try:
-    ET.fromstring(svg_gallery)
-    gallery_xml_ok = True
-except ET.ParseError as e:
-    gallery_xml_ok, _gal_err = False, str(e)
-check("gallery: SVG vẫn là XML hợp lệ", gallery_xml_ok, locals().get("_gal_err", ""))
-check("gallery: nhúng đúng 2 ảnh (href + xlink:href)",
-      svg_gallery.count('<image href="ls-bai-1_01.jpg" xlink:href="ls-bai-1_01.jpg"') == 1
-      and svg_gallery.count('<image href="ls-bai-1_02.jpg" xlink:href="ls-bai-1_02.jpg"') == 1)
-check("gallery: chỉ nhúng ảnh -> vẫn ra ảnh hợp lệ (không cần field khác)",
-      bool(render_infographic({}, "Bài rỗng nhưng có ảnh", images=gallery[:1])))
 
 print()
 if fails:
@@ -130,6 +107,6 @@ if fails:
 print("✅ Tất cả check đã qua. 0 token đã dùng.")
 with open("preview_content.md", "w", encoding="utf-8") as f:
     f.write(md)
-with open("preview_infographic.svg", "w", encoding="utf-8") as f:
-    f.write(svg)
-print("   Xem: preview_content.md, preview_infographic.svg")
+with open("preview_infographic_prompt.txt", "w", encoding="utf-8") as f:
+    f.write(prompt)
+print("   Xem: preview_content.md, preview_infographic_prompt.txt")

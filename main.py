@@ -6,8 +6,9 @@ Pipeline 6 stage, kết quả trung gian lưu ở runs/<tên-pdf>/work/:
   1. TOC        : bookmark PDF (code) hoặc AI suy ra mục lục
   2. Structure  : chuẩn hoá + sinh slug/order (code, deterministic)
   3. Content    : mỗi topic -> Markdown bài học + key_points (AI, chunk theo trang)
-  4. Images     : vẽ infographic tổng hợp kiến thức bằng code (0 token, mặc định);
-                  tuỳ chọn trích thêm ảnh gốc PDF + AI lọc (--book-images)
+  4. Images     : gọi model sinh ảnh vẽ infographic tổng hợp kiến thức từ
+                  Learning Object (mặc định, +1 request ảnh/topic); tuỳ chọn
+                  trích thêm ảnh gốc PDF + AI lọc (--book-images)
   5. Questions  : MCQ theo key_points (coverage) + pass validation đáp án
   6. Export     : CSV UTF-8 BOM đúng template + manifest.json
 
@@ -42,6 +43,8 @@ def main():
     ap.add_argument("pdf", type=Path, help="đường dẫn file PDF")
     ap.add_argument("--level", default="Lớp 6", help='giá trị cột level, vd "Lớp 6"')
     ap.add_argument("--model", default="gemini-2.5-flash")
+    ap.add_argument("--image-model", default="gemini-2.5-flash-image",
+                    help="model sinh ảnh infographic (xem --no-infographic để tắt)")
     ap.add_argument("--density", default="full",
                     choices=["full", "compact", "minimal"],
                     help="mật độ chữ cột content (markdown): full (đủ) | compact "
@@ -79,11 +82,13 @@ def main():
                          "(tiết kiệm ~50% request stage 3+5; xem README về trade-off)")
     ap.add_argument("--no-images", action="store_true", help="bỏ qua stage 4")
     ap.add_argument("--no-infographic", action="store_true",
-                    help="tắt vẽ ảnh infographic tổng hợp kiến thức (0 token, code vẽ "
-                         "SVG từ Learning Object). Mặc định BẬT — đây là ảnh chính của topic.")
+                    help="tắt gọi model sinh ảnh infographic tổng hợp kiến thức "
+                         "(+1 request ẢNH/topic, không deterministic). Mặc định BẬT — "
+                         "đây là ảnh chính của topic. Dùng --dry-run để test pipeline "
+                         "trước khi tốn quota ảnh thật.")
     ap.add_argument("--book-images", action="store_true",
                     help="nhúng THÊM ảnh trích từ trang PDF (AI lọc, +1 request/topic). "
-                         "Mặc định TẮT.")
+                         "Mặc định TẮT. Liệt kê RIÊNG, không ghép vào infographic.")
     ap.add_argument("--redo-images", action="store_true",
                     help="CHỈ xoá cache + thư mục ảnh (stage 4) rồi sinh lại — GIỮ "
                          "NGUYÊN content/câu hỏi đã có, không tốn token stage 3/5/6. "
@@ -232,7 +237,10 @@ def main():
         n_topics = len(structure)
         est = n_topics * (2 if args.no_validate else 3)
         if not args.no_images:
-            est += n_topics
+            if not args.no_infographic:
+                est += n_topics   # 1 request ẢNH/topic (model sinh ảnh)
+            if args.book_images:
+                est += n_topics   # 1 request img_filter/topic
         print(f"\n👀 Kiểm tra mục lục phía trên: {n_topics} topic, "
               f"ước tính ~{est} request AI.")
         print("   Sai page range? Ctrl+C, sửa work/01_toc.json (hoặc dùng "
@@ -299,7 +307,8 @@ def main():
             if not args.no_images and slug not in images:
                 images[slug] = generate_images_one(doc, row, content[slug], client,
                                                    images_dir, book_images=args.book_images,
-                                                   infographic=not args.no_infographic)
+                                                   infographic=not args.no_infographic,
+                                                   image_model=args.image_model)
                 save_json(caches[4], images)
             if slug not in questions:
                 qs, dropped = generate_questions_one(row, content[slug], client,

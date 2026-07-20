@@ -59,7 +59,7 @@ hết quota giữa chừng vẫn có N topic hoàn chỉnh, tự export partial 
 2. Structure  slug/order sinh bằng code (deterministic)       → work/02_structure.json
 ─ vòng lặp từng topic ─
 3. Content    Markdown bài học + key_points (AI, chunk trang) → work/03_content.json
-4. Images     trích ảnh PDF + AI lọc; fallback sinh SVG       → work/04_images.json + output/images/
+4. Images     model sinh ảnh vẽ infographic + trích ảnh PDF   → work/04_images.json + output/images/
 5. Questions  MCQ theo key_points (coverage) + validation     → work/05_questions.json
 6. Review     (--review) model thứ 2 thẩm định                → work/06_review.json
 ─ hết vòng lặp ─
@@ -77,6 +77,10 @@ rõ, export partial rồi thoát — quota reset ~14-15h chiều giờ VN.
 | `--level "Lớp 6"` | Giá trị cột `level` (mặc định "Lớp 6") |
 | `--dry-run` | MockGemini, không cần API key — kiểm tra pipeline & format output |
 | `--no-images` | Bỏ stage ảnh: −1..2 request/topic (~30%), lấy ảnh sau bằng cách chạy lại bỏ cờ này |
+| `--no-infographic` | Tắt gọi model sinh ảnh vẽ infographic tổng hợp kiến thức (−1 request ẢNH/topic). Mặc định BẬT |
+| `--image-model` | Model sinh ảnh (mặc định `gemini-2.5-flash-image`) |
+| `--book-images` | Trích thêm ảnh gốc từ trang PDF + AI lọc (+1 request/topic), liệt kê riêng, không ghép vào infographic |
+| `--redo-images` | Chỉ xoá cache + thư mục ảnh (stage 4) rồi sinh lại — giữ nguyên content/câu hỏi đã có |
 | `--no-validate` | Bỏ pass tự giải kiểm chứng đáp án (không khuyến nghị) |
 | `--review` | Bật stage 6: model thứ hai thẩm định content + câu hỏi |
 | `--reviewer X` | `groq` (Llama 70B, độc lập nhà cung cấp — mặc định) / `openrouter` (DeepSeek R1) / `gemini-pro` (duy nhất đối chiếu được PDF gốc) |

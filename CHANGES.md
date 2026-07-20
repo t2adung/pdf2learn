@@ -96,6 +96,55 @@ python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
 
 ---
 
+## Cập nhật 8: đổi sang MODEL SINH ẢNH thay vì vẽ SVG (theo yêu cầu, xem ảnh mẫu)
+
+Cập nhật 7 vẽ infographic bằng SVG thuần code — bố cục đúng (banner, khối
+đánh số, khối công thức...) nhưng KHÔNG có minh hoạ vẽ tay (nhân vật,
+hoạ tiết) như các tờ tổng hợp kiến thức mẫu, vì SVG hình học không tái tạo
+được phong cách đó. Theo yêu cầu, bỏ hẳn hướng SVG, chuyển sang gọi MODEL
+SINH ẢNH (vd `gemini-2.5-flash-image`) — đánh đổi: tốn 1 request ẢNH/topic
+(không còn 0 token), kết quả KHÔNG deterministic, chữ tiếng Việt trong ảnh
+AI sinh đôi khi sai chính tả (nên xem ảnh trước khi dùng chính thức).
+
+Không lặp lại bước "đọc tài liệu -> tóm tắt JSON" của pipeline tham khảo:
+Learning Object của `stage_content.py` (đã tinh chỉnh chống hallucination
++ cắt sub-PDF theo page range) ĐÃ đóng vai trò bước tóm tắt đó rồi — chỉ
+còn thiếu bước "JSON -> prompt mô tả ảnh -> gọi model ảnh".
+
+- **`infographic_prompt.py`** (thay `infographic_svg.py`, đã XOÁ): `build_prompt(lo,
+  title, subject_tag="") -> str` — dựng prompt mô tả ảnh tiếng Việt chi tiết
+  (bố cục banner bong bóng mây, khối đánh số viền màu đứt nét kèm icon, khối
+  "Ghi nhớ nhanh" cố định cuối cùng, yêu cầu đúng chính tả). THUẦN CODE, 0
+  token — chỉ prompt text, không gọi AI. `icon_hint` của mỗi section (thường
+  là 1 emoji, xem `stage_content.py`) được đưa thẳng vào prompt làm gợi ý vẽ
+  minh hoạ nhỏ; section thiếu icon_hint dùng câu gợi ý chung chung thay vì
+  nhét cả câu heading (tránh hướng dẫn vẽ vô nghĩa).
+- **`gemini.py`**: thêm `Gemini.generate_image(prompt, tag, model) -> (bytes,
+  mime)` — gọi `:generateContent` với `responseModalities: ["TEXT","IMAGE"]`,
+  bóc `inlineData` từ response. `MockGemini.generate_image()` trả ảnh PNG giả
+  (vẽ bằng `fitz.Pixmap`, không cần thêm dependency Pillow) để `--dry-run`
+  chạy được không cần API key.
+- **`stage_images.py`**: `_infographic()` giờ gọi `client.generate_image()`
+  thay vì vẽ SVG. Bỏ cơ chế "nhúng ảnh PDF vào infographic" (gallery) của
+  Cập nhật 7 — model sinh ảnh không ghép được ảnh có sẵn vào, nên
+  `--book-images` quay lại liệt kê ảnh RIÊNG như trước. Giữ nguyên bộ lọc
+  "ảnh chiếm cả trang" (`MAX_PAGE_COVERAGE`).
+- **`main.py`**: thêm `--image-model` (mặc định `gemini-2.5-flash-image`).
+  Cập nhật help text `--no-infographic`/`--book-images` (không còn "0 token").
+  Sửa ước tính số request trước khi chạy (`est`) cho đúng: +1/topic nếu bật
+  infographic, +1/topic nữa nếu bật `--book-images` (trước đó cộng sai khi
+  không dùng ảnh nào).
+- `test_render.py`: thay 9 check SVG/gallery bằng 7 check cho
+  `infographic_prompt.build_prompt()` (đúng nội dung, escape không cần thiết
+  vì là văn bản chứ không phải XML, raise đúng khi Learning Object rỗng).
+
+⚠️ Cân nhắc vận hành: dùng `--dry-run` để test pipeline trước, `--redo-images`
+để sinh lại RIÊNG ảnh (không tốn token content/câu hỏi) khi cần thử lại
+prompt ảnh, và luôn xem qua ảnh trước khi import chính thức (chữ trong ảnh
+AI sinh có thể sai chính tả dù nội dung nguồn đúng).
+
+---
+
 ## Cập nhật 7: vẽ infographic tổng hợp kiến thức bằng code (thay thế mindmap)
 
 Sau Cập nhật 6, mặc định topic không còn ảnh nào (mindmap bị bỏ, `--book-images`
