@@ -96,6 +96,346 @@ python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
 
 ---
 
+## Cập nhật 14: --redo-content — sinh lại content, GIỮ NGUYÊN câu hỏi đã có
+
+Ghi nhận từ người dùng: `--redo-from 3` xoá luôn cả stage 5 (câu hỏi) dù chỉ
+muốn viết lại content — lãng phí token sinh lại câu hỏi trong khi câu hỏi cũ
+vẫn dùng tốt.
+
+- `main.py`: thêm `--redo-content` (đối xứng với `--redo-images` đã có ở
+  Cập nhật 8) — CHỈ xoá `03_content.json`, KHÔNG đụng ảnh/câu hỏi/review.
+  Vì file bị XOÁ (không chỉ bypass check), guard phiên bản content
+  (`CONTENT_VERSION`) tự động không còn gì để chặn — không cần sửa gì thêm
+  ở đó. Kết hợp `--redo-images` nếu muốn ảnh cũng cập nhật theo content mới.
+- ⚠️ Lưu ý ghi rõ trong help text: câu hỏi giữ lại được sinh từ `key_points`
+  CŨ — nếu nội dung mới thay đổi nhiều, câu hỏi có thể thiếu phủ hoặc lệch
+  so với bài học mới. Đây là đánh đổi người dùng tự cân nhắc, không phải
+  hành vi ẩn.
+
+```bash
+python3 main.py sach.pdf --level "Lớp 6" --redo-content --export-json
+```
+
+---
+
+## Cập nhật 13: --limit N — test AI thật với vài topic trước khi chạy cả sách
+
+Theo yêu cầu: thêm cờ để test nhanh chất lượng/format bằng AI thật (không
+phải MockGemini của `--dry-run`) mà không tốn token cho cả cuốn sách.
+
+- `main.py`: `--limit N` (mặc định 0 = không giới hạn) — cắt `structure`
+  (danh sách topic) còn N phần tử đầu NGAY SAU Stage 2 (structure), TRƯỚC
+  cả guard ước tính request và vòng lặp Stage 3-6. 0 token cho việc cắt
+  (thuần slice list) — Stage 1-2 (TOC/structure) vẫn chạy cho TOÀN BỘ sách
+  như cũ (rẻ/miễn phí, cần đủ để biết cấu trúc thật), chỉ Stage 3-6 (content/
+  ảnh/câu hỏi — phần tốn token) mới bị giới hạn.
+- 02_structure.json cache LUÔN lưu đủ toàn bộ topic (cắt xảy ra sau khi
+  load/build, không ảnh hưởng cache) — nên bỏ `--limit` ở lần chạy sau sẽ tự
+  động xử lý tiếp các topic còn lại (resume đúng nghĩa, không sinh lại N
+  topic đã test), không cần thêm cờ gì khác.
+- Export (topics.csv/multichoice.csv/manifest.json) tự nhiên chỉ chứa đúng
+  N topic đã xử lý — dùng ngay để test import thử mà không cần đợi/tốn token
+  cho cả sách.
+
+```bash
+python3 main.py sach.pdf --level "Lớp 6" --limit 3   # test 3 topic đầu, AI thật
+# ưng ý -> chạy tiếp phần còn lại (bỏ --limit):
+python3 main.py sach.pdf --level "Lớp 6"
+```
+
+---
+
+## Cập nhật 12: cảnh báo bẫy --redo-from lặp lại sau khi bị ngắt giữa chừng
+
+Ghi nhận từ người dùng: chạy `--redo-from 3`, bị ngắt giữa chừng (Ctrl+C,
+mất mạng...), chạy lại NGUYÊN command cũ (vẫn còn `--redo-from 3`) tưởng là
+resume nhưng thực ra `--redo-from` xoá cache VÔ ĐIỀU KIỆN mỗi lần chạy có cờ
+này — kể cả phần vừa sinh dở ở lần trước cũng bị xoá sạch, tốn token 2 lần
+cho cùng số topic.
+
+Không đổi hành vi cốt lõi của `--redo-from` (vẫn xoá-rồi-sinh-lại đúng như
+tên gọi, cần thiết cho use case "tôi muốn ép sinh lại"), chỉ thêm 1 cảnh báo
+sớm khi phát hiện tình huống này: `03_content.json` đã tồn tại, đã đúng
+`CONTENT_VERSION` hiện tại (nghĩa là lần trước `--redo-from` đã áp dụng
+thành công một phần), VÀ có ít nhất 1 topic đã xong — in cảnh báo rõ số
+topic sẽ bị xoá + hướng dẫn bỏ `--redo-from` để resume, đủ thời gian Ctrl+C
+trước khi thật sự xoá.
+
+Quy tắc dùng đúng: `--redo-from N` chỉ cần ở LẦN CHẠY ĐẦU TIÊN của một đợt
+sinh lại. Mọi lần chạy lại sau đó (kể cả do bị ngắt giữa chừng) — BỎ cờ này
+đi, cơ chế resume mặc định (dựa vào cache + `_v` đã đúng) sẽ tự tiếp tục
+đúng phần dở dang, 0 token cho phần đã xong.
+
+---
+
+## Cập nhật 11: nhúng thẳng infographic_html vào JSON xuất (không cần file rời)
+
+Theo yêu cầu, thêm field `infographic_html` (string) vào JSON đích của
+`export_json.py` (áp dụng cho cả `--export-json` lẫn `--content-format
+json`) — chứa NGUYÊN VĂN trang HTML infographic (đủ `<!doctype>`/`<style>`),
+để frontend dùng thẳng (vd `<iframe srcdoc={value}>`) không cần fetch file
+`.html` riêng trong `images/`.
+
+- `export_json.py`: gọi lại `infographic_html.render(lo, title)` NGAY TẠI
+  bước export — THUẦN CODE, 0 token, deterministic, không cần lưu trung
+  gian (hàm đã đủ rẻ để gọi lại bất cứ lúc nào, giống cách `render_markdown`
+  đã làm với content). Rỗng (`""`) nếu Learning Object không có gì để vẽ.
+- **Không dùng base64**: string HTML nhúng thẳng, dựa vào `json.dumps` tự
+  escape chuẩn (dấu `"`, xuống dòng...). Base64 chỉ làm phình kích thước
+  (~33%) và bắt frontend phải decode thêm 1 bước — không cần thiết vì JSON
+  string đã an toàn 100% qua CSV round-trip (đã test tay: nhúng chuỗi có
+  `"`, `&`, `<>`, xuống dòng, ghi CSV, đọc lại, `json.loads` ra đúng y hệt).
+- File `.html`/`.png` rời trong `output/images/` (từ Cập nhật 10) KHÔNG đổi
+  — đây là nguồn ĐỘC LẬP thứ hai, dùng chung 1 hàm `render()` thuần code
+  nên luôn ra kết quả giống hệt nhau, không cần đồng bộ 2 chiều.
+
+---
+
+## Cập nhật 10: REVERT model sinh ảnh -> infographic bằng HTML/CSS + Chromium
+
+Dù đã giảm mật độ chữ (Cập nhật 9), model sinh ảnh vẫn còn sai chính tả
+tiếng Việt trong test thật (vd "trọng tâm" -> "trọng tậm", "thông minh" ->
+"thổng minh", "xây dựng" -> "xay đựng"). Theo yêu cầu, REVERT hẳn hướng
+model sinh ảnh (Cập nhật 8-9), quay lại hướng CODE THUẦN như v3 (SVG) —
+nhưng lần này dùng HTML/CSS thay vì SVG, và chụp thành PNG bằng headless
+Chromium thay vì để trình duyệt tự hiển thị SVG-as-image.
+
+Vì sao HTML/CSS hết hẳn lỗi chính tả: chữ trong ảnh giờ là **text HTML
+thật** — trình duyệt tự render font sẵn có trên máy, không phải AI "vẽ"
+từng nét chữ như pixel. Sai chính tả tiếng Việt trong ảnh AI sinh là
+KHÔNG THỂ xảy ra nữa với cách này. Bonus: CSS tự lo word-wrap/layout, khỏi
+phải tự tính tay như hồi làm SVG (v3) — code gọn hơn hẳn.
+
+- **`infographic_prompt.py`**: XOÁ (không còn dùng model sinh ảnh).
+- **`infographic_html.py` (MỚI, thay `infographic_svg.py` cũ)**: `render(lo,
+  title) -> str` (HTML hoàn chỉnh, có `<style>` nhúng sẵn). Bố cục: banner
+  gradient + pill phụ đề, khối "Câu hỏi khởi động" (nếu có `hook`), các
+  card viền màu đứt nét đánh số kèm icon (emoji từ `icon_hint`) — Khái niệm
+  trọng tâm -> mỗi `sections[i]` (kèm khối công thức) -> Từ khoá cần nhớ ->
+  Lưu ý & mẹo nhớ -> Ghi nhớ nhanh (card liền, tô vàng nổi bật). THUẦN CODE,
+  0 token, escape HTML đúng (`html.escape`) nên không lỗi cú pháp dù nội
+  dung có `&`, `<`, `>`, `"`.
+- **`html_render.py` (MỚI)**: `HtmlRenderer` — bọc Playwright, chụp 1 chuỗi
+  HTML thành PNG (`full_page=True`, chiều cao tự co theo nội dung). Dependency
+  **TUỲ CHỌN** (không có trong requirements.txt): `RendererUnavailable` raise
+  ngay khi khởi tạo nếu chưa cài Playwright/Chromium — caller (main.py) bắt
+  lỗi này, cảnh báo 1 LẦN rồi chạy tiếp KHÔNG có ảnh infographic thay vì sập
+  pipeline. 1 browser dùng chung cho CẢ LẦN CHẠY (khởi động ~1-2s, mở/đóng
+  riêng mỗi topic sẽ chậm không cần thiết) — main.py tạo trước vòng lặp
+  topic, đóng trong `finally` sau vòng lặp.
+- **`stage_images.py`**: `_infographic()` gọi `HtmlRenderer.render_png()`
+  thay vì `client.generate_image()`. Ghi CẢ `.html` (nguồn, phòng khi
+  frontend muốn nhúng HTML trực tiếp) LẪN `.png` (dùng cho pipeline hiện có
+  — `topics.csv`/`manifest.json` vẫn tham chiếu 1 file ảnh như trước, không
+  đổi gì phía export). `--book-images` (ảnh trích từ PDF) không đổi.
+- **`main.py`**: bỏ `--image-model`. `--no-infographic` giờ đúng nghĩa "0
+  token" trở lại. Sửa ước tính request trước khi chạy: infographic không
+  còn tính vào (chỉ `--book-images` mới cộng thêm request).
+- **`gemini.py`**: bỏ `generate_image()` ở cả `Gemini` và `MockGemini`
+  (không còn cần — infographic không gọi AI nữa).
+- **`requirements.txt`**: thêm comment hướng dẫn cài Playwright (tuỳ chọn,
+  không phải dependency cứng — pipeline vẫn chạy đủ mà không có ảnh
+  infographic nếu chưa cài).
+- `test_render.py`: thay check cho `infographic_prompt` bằng check cho
+  `infographic_html.render()` (escape đúng, có đủ khối, raise đúng khi
+  rỗng) + 1 check TUỲ CHỌN render PNG thật qua Chromium (bỏ qua nếu chưa
+  cài Playwright, không làm fail cả suite — giữ đúng lời hứa "0 dependency
+  bắt buộc, 0 token" của file test này).
+
+Nghiệm thu: `python3 test_render.py` (skip nhẹ phần Chromium nếu môi trường
+chưa cài) + chạy full `--dry-run` với Chromium thật, xác nhận PNG sinh ra
+đúng nội dung, chữ tiếng Việt không còn lỗi (vì là text thật, không phải AI vẽ).
+
+---
+
+## Cập nhật 9: giảm lỗi chính tả trong ảnh + khoá tỉ lệ A4 + fail-fast
+
+Test thật ảnh sinh ra ở Cập nhật 8 cho thấy chữ tiếng Việt sai khá nhiều
+(vd "trọng tâm" -> "trọng tậm", "thông minh" -> "thổng minh", "xây dựng" ->
+"xay đựng") — càng nhiều chữ nhỏ trong ảnh, model càng dễ viết sai.
+
+- `infographic_prompt.py`:
+  - Thêm `MAX_BLOCKS=4` (khối nội dung chính, chưa tính "Ghi nhớ nhanh") +
+    `_fit_bullets()` giới hạn `MAX_BULLETS_PER_BLOCK=3` và tổng
+    `MAX_CHARS_PER_BLOCK=140` ký tự/khối — GIẢM TỔNG LƯỢNG CHỮ đưa vào ảnh.
+    **Quan trọng**: `_fit_bullets()` bỏ NGUYÊN VẸN cả bullet cuối nếu vượt
+    ngân sách, KHÔNG cắt giữa câu. Bản đầu tiên của cập nhật này dùng
+    `str.split()[:9]` để cắt theo số từ — LỖI: tiếng Việt có nhiều từ ghép
+    2 âm tiết cách nhau bằng dấu cách (vd "lịch sử", "trọng tâm"), cắt theo
+    số từ dễ cắt đứt giữa 1 từ ghép (vd "lịch sử" -> chỉ còn "lịch"); vì
+    prompt yêu cầu model chép ĐÚNG NGUYÊN VĂN nên bullet cụt sẽ bị chép sai
+    y hệt phần cụt đó — phản tác dụng, tự tạo ra đúng loại lỗi muốn tránh.
+    Đã sửa bằng cách bỏ hẳn bullet thay vì cắt dở.
+  - Khoá tỉ lệ khung ảnh: nêu rõ trong prompt "ĐÚNG TỈ LỆ TRANG A4 ĐỨNG
+    (210mm x 297mm, ~3:4, vd khung 1240x1754px)" thay vì chỉ nói chung
+    chung "khổ dọc".
+  - Siết khối "YÊU CẦU CHỮ VIẾT" lên ưu tiên cao nhất: chép đúng từng dấu
+    thanh, không đoán mò, vẽ khung/chữ nhỏ lại thay vì tự cắt/sửa chữ khi
+    không vừa khung, chữ nội dung dùng font thẳng dễ đọc (chỉ tiêu đề lớn
+    mới dùng font trang trí — chữ nhỏ font trang trí dễ đọc/viết sai hơn).
+- `gemini.py`:
+  - `generate_image()` set `generationConfig.imageConfig.aspectRatio = "3:4"`
+    (preset chuẩn của Gemini image gần nhất với tỉ lệ A4) — khoá tỉ lệ ở cả
+    tham số API lẫn mô tả trong prompt, không chỉ dựa vào prompt.
+  - Fail-fast: `IMAGE_MAX_RETRIES=2` (thay vì `self.max_retries` mặc định 6)
+    cho riêng request ảnh — 1 request ảnh tốn quota/tiền hơn nhiều so với 1
+    request text, nên lỗi lặp lại (bị chặn nội dung, model quá tải...)
+    KHÔNG đáng để dò lại nhiều lần cho CÙNG 1 topic; bỏ qua nhanh, dành
+    quota cho topic khác. `_post()` nhận thêm `max_retries` override thay
+    vì luôn dùng field cố định của client.
+  - Đã có sẵn từ Cập nhật 8 (giữ nguyên, không đổi): `_infographic()` ở
+    `stage_images.py` bắt mọi exception từ `generate_image()` và BỎ QUA ảnh
+    của topic đó (`return None`) thay vì làm sập cả pipeline — đúng yêu cầu
+    "nếu sai thì bỏ qua". Cache stage 4 theo slug cũng tự nhiên tránh gọi
+    lại API cho topic đã có ảnh (hoặc đã thử và lưu kết quả rỗng) giữa các
+    lần chạy — không cần thêm cơ chế chống trùng lặp riêng.
+- `test_render.py`: cập nhật check theo `_fit_bullets` (giữ nguyên bullet
+  đủ ngân sách, bỏ hẳn bullet vượt ngân sách — không còn dạng cắt cụt giữa
+  câu), thêm check khoá tỉ lệ A4/3:4 trong prompt.
+
+---
+
+## Cập nhật 8: đổi sang MODEL SINH ẢNH thay vì vẽ SVG (theo yêu cầu, xem ảnh mẫu)
+
+Cập nhật 7 vẽ infographic bằng SVG thuần code — bố cục đúng (banner, khối
+đánh số, khối công thức...) nhưng KHÔNG có minh hoạ vẽ tay (nhân vật,
+hoạ tiết) như các tờ tổng hợp kiến thức mẫu, vì SVG hình học không tái tạo
+được phong cách đó. Theo yêu cầu, bỏ hẳn hướng SVG, chuyển sang gọi MODEL
+SINH ẢNH (vd `gemini-2.5-flash-image`) — đánh đổi: tốn 1 request ẢNH/topic
+(không còn 0 token), kết quả KHÔNG deterministic, chữ tiếng Việt trong ảnh
+AI sinh đôi khi sai chính tả (nên xem ảnh trước khi dùng chính thức).
+
+Không lặp lại bước "đọc tài liệu -> tóm tắt JSON" của pipeline tham khảo:
+Learning Object của `stage_content.py` (đã tinh chỉnh chống hallucination
++ cắt sub-PDF theo page range) ĐÃ đóng vai trò bước tóm tắt đó rồi — chỉ
+còn thiếu bước "JSON -> prompt mô tả ảnh -> gọi model ảnh".
+
+- **`infographic_prompt.py`** (thay `infographic_svg.py`, đã XOÁ): `build_prompt(lo,
+  title, subject_tag="") -> str` — dựng prompt mô tả ảnh tiếng Việt chi tiết
+  (bố cục banner bong bóng mây, khối đánh số viền màu đứt nét kèm icon, khối
+  "Ghi nhớ nhanh" cố định cuối cùng, yêu cầu đúng chính tả). THUẦN CODE, 0
+  token — chỉ prompt text, không gọi AI. `icon_hint` của mỗi section (thường
+  là 1 emoji, xem `stage_content.py`) được đưa thẳng vào prompt làm gợi ý vẽ
+  minh hoạ nhỏ; section thiếu icon_hint dùng câu gợi ý chung chung thay vì
+  nhét cả câu heading (tránh hướng dẫn vẽ vô nghĩa).
+- **`gemini.py`**: thêm `Gemini.generate_image(prompt, tag, model) -> (bytes,
+  mime)` — gọi `:generateContent` với `responseModalities: ["TEXT","IMAGE"]`,
+  bóc `inlineData` từ response. `MockGemini.generate_image()` trả ảnh PNG giả
+  (vẽ bằng `fitz.Pixmap`, không cần thêm dependency Pillow) để `--dry-run`
+  chạy được không cần API key.
+- **`stage_images.py`**: `_infographic()` giờ gọi `client.generate_image()`
+  thay vì vẽ SVG. Bỏ cơ chế "nhúng ảnh PDF vào infographic" (gallery) của
+  Cập nhật 7 — model sinh ảnh không ghép được ảnh có sẵn vào, nên
+  `--book-images` quay lại liệt kê ảnh RIÊNG như trước. Giữ nguyên bộ lọc
+  "ảnh chiếm cả trang" (`MAX_PAGE_COVERAGE`).
+- **`main.py`**: thêm `--image-model` (mặc định `gemini-2.5-flash-image`).
+  Cập nhật help text `--no-infographic`/`--book-images` (không còn "0 token").
+  Sửa ước tính số request trước khi chạy (`est`) cho đúng: +1/topic nếu bật
+  infographic, +1/topic nữa nếu bật `--book-images` (trước đó cộng sai khi
+  không dùng ảnh nào).
+- `test_render.py`: thay 9 check SVG/gallery bằng 7 check cho
+  `infographic_prompt.build_prompt()` (đúng nội dung, escape không cần thiết
+  vì là văn bản chứ không phải XML, raise đúng khi Learning Object rỗng).
+
+⚠️ Cân nhắc vận hành: dùng `--dry-run` để test pipeline trước, `--redo-images`
+để sinh lại RIÊNG ảnh (không tốn token content/câu hỏi) khi cần thử lại
+prompt ảnh, và luôn xem qua ảnh trước khi import chính thức (chữ trong ảnh
+AI sinh có thể sai chính tả dù nội dung nguồn đúng).
+
+---
+
+## Cập nhật 7: vẽ infographic tổng hợp kiến thức bằng code (thay thế mindmap)
+
+Sau Cập nhật 6, mặc định topic không còn ảnh nào (mindmap bị bỏ, `--book-images`
+tắt). Cập nhật này thêm lại một ảnh — nhưng đúng thứ người dùng thật sự muốn:
+một tờ "Tổng hợp kiến thức" dạng infographic, vẽ THUẦN CODE (SVG) từ chính
+Learning Object, 0 token AI, không bao giờ lỗi cú pháp.
+
+- `infographic_svg.py` (MỚI): `render(lo, title) -> str` (SVG). Bố cục: banner
+  tiêu đề + pill "TỔNG HỢP KIẾN THỨC", khối "Câu hỏi khởi động" (nếu có `hook`),
+  rồi các khối đánh số viền màu (dashed) kèm icon (`icon_hint`): Khái niệm
+  trọng tâm -> mỗi `sections[i]` (kèm khối công thức tách biến số nếu có) ->
+  Từ khoá cần nhớ -> Lưu ý & mẹo nhớ (gộp real_life/misconceptions/memory_hooks)
+  -> Ghi nhớ nhanh (tô vàng nổi bật, khác các khối khác). Field nào rỗng thì bỏ
+  qua khối đó; rỗng hết thì `raise ValueError` (không có gì để vẽ).
+  KHÔNG nhắm tái tạo minh hoạ nhân vật vẽ tay của các mẫu tham khảo — chỉ tái
+  hiện bố cục (xem docstring đầu file để biết trade-off & lý do).
+- `stage_images.py`: thêm `_infographic()` + tham số `infographic=True` (mặc
+  định BẬT) cho `generate_images_one()` — vẽ ảnh này TRƯỚC, độc lập với
+  `book_images`. Cache v1/v2 thiếu field mới (concept_overview/quick_review)
+  vẫn vẽ được, miễn còn `sections`/`key_terms`.
+- `main.py`: thêm cờ `--no-infographic` (tắt khối này nếu không cần).
+- `test_render.py`: thêm 6 check cho `infographic_svg` (XML hợp lệ kể cả tiêu
+  đề có `&"<>`, escape đúng dấu `|`, raise đúng khi LO rỗng).
+
+**Bổ sung cùng đợt (phản hồi sau khi xem preview):**
+- **Nhúng ảnh PDF thẳng vào infographic**: `infographic_svg.render()` nhận
+  thêm tham số `images` (list `{file, caption, w, h}`) — vẽ 1 dải ảnh minh
+  hoạ (tối đa `GALLERY_MAX=3`, đúng tỉ lệ khung hình) ngay dưới banner tiêu
+  đề, kèm caption. Ảnh tham chiếu bằng filename tương đối (`<image href=...
+  xlink:href=...>`) nên phải nằm CÙNG THƯ MỤC với file SVG (đúng quy ước
+  ảnh sẵn có của repo). `stage_images.py` đảo lại thứ tự: trích + AI lọc
+  ảnh PDF (nếu `--book-images`) TRƯỚC, rồi mới vẽ infographic để nhúng được
+  các ảnh đó vào.
+- **Bỏ ảnh chiếm cả trang**: `_extract_candidates()` giờ so diện tích rect
+  đặt ảnh (`page.get_image_rects`) với diện tích trang; ảnh > 85%
+  (`MAX_PAGE_COVERAGE`) bị loại — sách scan hay nhúng CẢ TRANG làm 1 ảnh,
+  lấy vào sẽ chiếm hết chỗ và không có giá trị minh hoạ. Đã test bằng PDF
+  tổng hợp (fitz, ảnh nhiễu incompressible để qua được `MIN_BYTES`): ảnh
+  18.75% diện tích trang được giữ, ảnh 97% bị loại đúng như kỳ vọng.
+
+Nghiệm thu: `python3 test_render.py` (thuần code) + render thử SVG ra PNG bằng
+Chromium headless để xem trực quan — bố cục khớp với mẫu tham khảo (banner,
+khối đánh số, khối công thức, khối "Ghi nhớ nhanh" tô vàng), chỉ khác là icon
+emoji + hình khối thay vì minh hoạ nhân vật vẽ tay.
+
+---
+
+## Cập nhật 6: bỏ mindmap, prompt v3 sinh động hơn (kiểu tờ tóm tắt infographic)
+
+Mục tiêu: nội dung bài học dễ hiểu và sinh động hơn — bám theo bố cục các tờ
+"Tổng hợp kiến thức" giáo viên hay tự làm tay (khối mở đầu nêu trọng tâm,
+công thức tách riêng biến số, khối chốt cuối bài). Bỏ hẳn field `mindmap` —
+sơ đồ tư duy khó đọc trên giao diện text/markdown và không tăng độ dễ hiểu
+bằng cách trình bày trực tiếp trong nội dung.
+
+- `stage_content.py`: `CONTENT_SCHEMA`/`CONTENT_PROMPT` v3.
+  - Bỏ field `mindmap` (schema + prompt + required).
+  - Thêm `concept_overview` (1-2 câu trọng tâm cả bài, mở đầu bài học).
+  - Thêm `quick_review` (2-4 câu chốt ngắn cuối bài, kiểu "Ghi nhớ nhanh").
+  - `sections[].formula` (tuỳ chọn): `{expression, variables: [{symbol, meaning}]}`
+    — chỉ thêm khi mục có công thức/định luật thật trong tài liệu.
+  - Thêm hướng dẫn văn phong: ưu tiên so sánh/ví dụ cụ thể gắn đời sống học
+    sinh thay vì định nghĩa hàn lâm.
+- `render_markdown.py`: render `concept_overview` (khối đầu, blockquote),
+  `formula` trong section (khối code `Công thức:` + bullet biến số),
+  `quick_review` (khối cuối, trước phần ảnh). Cập nhật `DENSITY` — mức
+  `minimal` giờ giữ Khái niệm trọng tâm + Ghi nhớ nhanh thay vì mindmap.
+- `stage_images.py`: bỏ hẳn `_mindmap_svg` (vẽ SVG từ field `mindmap`).
+  Mặc định (`--book-images` tắt) topic giờ KHÔNG có ảnh nào — trước đây
+  luôn có ít nhất mindmap SVG. Bật `--book-images` nếu cần ảnh trích từ PDF.
+- `export_json.py`: bỏ `mindmap_mermaid`; xuất thêm `concept_overview`,
+  `quick_review`, `sections[].formula`. `prompt_version` -> `"v3"`.
+- `mindmap_svg.py`: XOÁ (không còn nơi nào dùng).
+- `main.py`: `CONTENT_VERSION = 3` (cache cũ cần `--redo-from 3`).
+- `gemini.py`, `test_render.py`: cập nhật mock/fixture theo schema mới.
+- `main.py`: thêm cờ `--redo-images` — CHỈ xoá cache + thư mục ảnh (stage 4)
+  rồi sinh lại, GIỮ NGUYÊN content/câu hỏi đã có (0 token stage 3/5/6).
+  Khác với `--redo-from 4` (xoá luôn cả câu hỏi + review từ stage 4 trở đi).
+  Tiện khi bật/tắt `--book-images` hoặc đổi bộ lọc ảnh mà không muốn sinh
+  lại cả bài học:
+  ```bash
+  python3 main.py sach.pdf --toc-file work/01_toc.json --book-images --redo-images
+  ```
+
+Cache cũ (v1/v2) không đọc được nữa — pipeline sẽ báo lỗi và yêu cầu:
+
+```bash
+python3 main.py sach.pdf --redo-from 3
+```
+
+---
+
 ## Cập nhật 5: chỉ giữ mindmap SVG + hậu xử lý CSV có sẵn
 
 Ảnh trang sách (.jpg trích từ PDF) ít giá trị trên giao diện học và làm bài dài.

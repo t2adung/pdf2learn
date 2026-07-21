@@ -224,6 +224,7 @@ class MockGemini(Gemini):
             ]}
         if tag == "content":
             return {
+                "concept_overview": "X là khái niệm cốt lõi của bài, gắn liền với Y trong đời sống (mock).",
                 "objectives": [
                     "Nêu được khái niệm X và vai trò của nó",
                     "Giải thích được vì sao X quan trọng trong đời sống",
@@ -241,23 +242,26 @@ class MockGemini(Gemini):
                     {"heading": "X là gì?", "icon_hint": "🔎",
                      "points": ["Ý chính thứ nhất về X (mock).",
                                 "Ý chính thứ hai, bổ sung cho ý trên."]},
+                    {"heading": "Công thức tính X", "icon_hint": "🧮",
+                     "formula": {"expression": "X = a * b (mock)",
+                                 "variables": [
+                                     {"symbol": "a", "meaning": "đại lượng a (đơn vị mock)"},
+                                     {"symbol": "b", "meaning": "đại lượng b (đơn vị mock)"},
+                                 ]},
+                     "points": ["X tăng khi a hoặc b tăng (mock)."]},
                     {"heading": "Vì sao X quan trọng?", "icon_hint": "🌍",
                      "points": ["Lý do thứ nhất (mock).",
                                 "Lý do thứ hai, gắn với đời sống."]},
                 ],
-                "mindmap": {
-                    "root": "Khái niệm X",
-                    "branches": [
-                        {"label": "Đặc điểm", "children": ["Đặc điểm 1", "Đặc điểm 2"]},
-                        {"label": "Phân loại", "children": ["Loại A", "Loại B"]},
-                        {"label": "Ứng dụng", "children": ["Trong đời sống", "Trong kỹ thuật"]},
-                    ],
-                },
                 "real_life": ["Ví dụ đời sống minh hoạ khái niệm X (mock)."],
                 "memory_hooks": ["Nhớ X bằng ba chữ Đ: Đặc điểm - Định nghĩa - Đời sống."],
                 "misconceptions": [
                     {"wrong": "Nhiều bạn nghĩ X và Y là một (mock).",
                      "correct": "Thực ra X khác Y ở tính chất cốt lõi."},
+                ],
+                "quick_review": [
+                    "X là nền tảng của cả bài học (mock).",
+                    "Công thức X = a * b luôn đúng trong điều kiện chuẩn (mock).",
                 ],
                 "key_points": [
                     "Khái niệm X là nền tảng của chủ đề",

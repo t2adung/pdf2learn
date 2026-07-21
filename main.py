@@ -6,7 +6,10 @@ Pipeline 6 stage, kết quả trung gian lưu ở runs/<tên-pdf>/work/:
   1. TOC        : bookmark PDF (code) hoặc AI suy ra mục lục
   2. Structure  : chuẩn hoá + sinh slug/order (code, deterministic)
   3. Content    : mỗi topic -> Markdown bài học + key_points (AI, chunk theo trang)
-  4. Images     : trích ảnh PDF + AI lọc; fallback sinh SVG diagram
+  4. Images     : dựng infographic tổng hợp kiến thức bằng HTML/CSS + chụp
+                  PNG bằng headless Chromium (0 token, mặc định; cần cài
+                  Playwright, xem README); tuỳ chọn trích thêm ảnh gốc PDF +
+                  AI lọc (--book-images)
   5. Questions  : MCQ theo key_points (coverage) + pass validation đáp án
   6. Export     : CSV UTF-8 BOM đúng template + manifest.json
 
@@ -18,6 +21,7 @@ Dùng:
   python main.py sach.pdf --level "Lớp 6"
 
   python main.py sach.pdf --dry-run          # test KHÔNG cần API key (mock AI)
+  python main.py sach.pdf --limit 3          # test AI thật, chỉ 3 topic đầu (tránh tốn token)
   python main.py sach.pdf --redo-from 5      # xoá cache stage 5+, sinh lại câu hỏi
   python main.py sach.pdf --no-images --no-validate   # nhanh, ít request
 """
@@ -31,7 +35,9 @@ from utils import load_json, log, save_json, warn
 
 # Phiên bản shape của 03_content.json. v2 = Learning Object JSON
 # (objectives/sections/mindmap/...) thay cho blob content_markdown (v1).
-CONTENT_VERSION = 2
+# v3 = bỏ "mindmap", thêm "concept_overview" + "quick_review" + "formula"
+# trong section (nội dung sinh động/dễ hiểu hơn, xem stage_content.py).
+CONTENT_VERSION = 3
 
 
 def main():
@@ -42,8 +48,9 @@ def main():
     ap.add_argument("--density", default="full",
                     choices=["full", "compact", "minimal"],
                     help="mật độ chữ cột content (markdown): full (đủ) | compact "
-                         "(3 point/mục, cắt point dài) | minimal (chỉ mục tiêu + nội "
-                         "dung chính + mindmap). Đổi mức 0 token — chỉ re-render.")
+                         "(3 point/mục, cắt point dài) | minimal (khái niệm trọng "
+                         "tâm + mục tiêu + nội dung chính + ghi nhớ nhanh). Đổi mức "
+                         "0 token — chỉ re-render.")
     ap.add_argument("--content-format", default="markdown",
                     choices=["markdown", "json"],
                     help="định dạng cột content trong topics.csv: markdown "
@@ -55,12 +62,16 @@ def main():
                     help='khối lớp ghi vào JSON (mặc định: tự rút số từ --level, "Lớp 6" -> "6")')
     ap.add_argument("--export-json", action="store_true",
                     help="ghi thêm output/json/{topic_slug}.json theo format đích "
-                         "(nhúng quiz, mindmap_mermaid) — 0 token, sinh từ cache")
+                         "(nhúng quiz) — 0 token, sinh từ cache")
     ap.add_argument("--toc-file", type=Path, default=None,
                     help="dùng file 01_toc.json dựng sẵn (vd từ build_toc.py) "
                          "thay cho bookmark/AI — 0 token, chính xác 100%%")
     ap.add_argument("--yes", action="store_true",
                     help="bỏ bước xác nhận mục lục trước khi gọi AI")
+    ap.add_argument("--limit", type=int, default=0, metavar="N",
+                    help="CHỈ xử lý N topic đầu tiên rồi export — test nhanh chất "
+                         "lượng/format trước khi chạy cả sách, tránh tốn token oan. "
+                         "0 = không giới hạn (mặc định). Vd: --limit 3")
     ap.add_argument("--interval", type=float, default=6.0,
                     help="giây giữa 2 request (free tier ~10 RPM -> 6s)")
     ap.add_argument("--dpi", type=int, default=0,
@@ -74,9 +85,28 @@ def main():
                     help="sinh content + câu hỏi trong 1 request/topic "
                          "(tiết kiệm ~50% request stage 3+5; xem README về trade-off)")
     ap.add_argument("--no-images", action="store_true", help="bỏ qua stage 4")
+    ap.add_argument("--no-infographic", action="store_true",
+                    help="tắt vẽ ảnh infographic tổng hợp kiến thức (HTML/CSS + "
+                         "headless Chromium, 0 token). Mặc định BẬT — đây là ảnh "
+                         "chính của topic. Tự bỏ qua (cảnh báo, không lỗi) nếu chưa "
+                         "cài Playwright — xem README.")
     ap.add_argument("--book-images", action="store_true",
                     help="nhúng THÊM ảnh trích từ trang PDF (AI lọc, +1 request/topic). "
-                         "Mặc định TẮT: chỉ giữ mindmap SVG do code vẽ (0 token, gọn giao diện).")
+                         "Mặc định TẮT. Liệt kê RIÊNG, không ghép vào infographic.")
+    ap.add_argument("--redo-images", action="store_true",
+                    help="CHỈ xoá cache + thư mục ảnh (stage 4) rồi sinh lại — GIỮ "
+                         "NGUYÊN content/câu hỏi đã có, không tốn token stage 3/5/6. "
+                         "Tiện khi bật/tắt --book-images hoặc đổi bộ lọc ảnh mà không "
+                         "muốn sinh lại cả bài học.")
+    ap.add_argument("--redo-content", action="store_true",
+                    help="CHỈ xoá cache content (stage 3) rồi sinh lại — GIỮ NGUYÊN "
+                         "câu hỏi/ảnh/review đã có, không tốn token stage 4/5/6. Dùng "
+                         "thay --redo-from 3 khi câu hỏi cũ vẫn dùng được, khỏi sinh "
+                         "lại tốn token. Kết hợp --redo-images nếu muốn ảnh cũng cập "
+                         "nhật theo content mới. LƯU Ý: câu hỏi cũ sinh từ key_points "
+                         "CŨ — nếu nội dung mới thay đổi nhiều, câu hỏi có thể thiếu "
+                         "phủ hoặc lệch so với bài học mới; chạy quality_checks/xem "
+                         "lại thủ công nếu nghi ngờ.")
     ap.add_argument("--no-validate", action="store_true",
                     help="bỏ qua pass kiểm chứng đáp án ở stage 5")
     ap.add_argument("--review", action="store_true",
@@ -101,6 +131,9 @@ def main():
 
     if not args.pdf.exists():
         sys.exit(f"Không tìm thấy file: {args.pdf}")
+    if args.redo_images and args.no_images:
+        sys.exit("--redo-images và --no-images mâu thuẫn nhau (một cái đòi sinh lại "
+                 "ảnh, cái kia bảo bỏ qua stage 4).")
 
     # ---- client ----
     if args.dry_run:
@@ -126,6 +159,21 @@ def main():
               5: work / "05_questions.json", 6: work / "06_review.json"}
     f_export_state = work / "07_export_state.json"
 
+    # ---- Cảnh báo bẫy hay gặp: --redo-from XOÁ CACHE VÔ ĐIỀU KIỆN mỗi lần
+    # chạy lệnh có cờ này — không phải chỉ lần đầu. Nếu lần trước --redo-from 3
+    # bị ngắt giữa chừng (Ctrl+C, mất mạng...) và người dùng chạy lại NGUYÊN
+    # command cũ (vẫn còn --redo-from 3), cache vừa sinh dở cũng bị xoá sạch,
+    # tưởng là "resume" nhưng thực ra sinh lại từ đầu, tốn token 2 lần.
+    if args.redo_from <= 3 and caches[3].exists():
+        _prev_content = load_json(caches[3], {}) or {}
+        _prev_done = [k for k in _prev_content if k != "_v"]
+        if _prev_content.get("_v") == CONTENT_VERSION and _prev_done:
+            warn(f"⚠️  03_content.json đã có {len(_prev_done)} topic theo ĐÚNG prompt mới nhất "
+                 "(có thể do lần chạy --redo-from trước bị ngắt giữa chừng). Lệnh hiện tại sẽ "
+                 f"XOÁ HẾT {len(_prev_done)} topic đó và sinh lại TỪ ĐẦU, tốn lại token.")
+            warn("   Muốn TIẾP TỤC phần dở dang thay vì sinh lại: bỏ --redo-from khỏi lệnh rồi "
+                 "chạy lại. Ctrl+C ngay bây giờ nếu đây không phải ý bạn.")
+
     # ---- --redo-from: xoá cache từ stage N trở đi ----
     for n, f in caches.items():
         if n >= args.redo_from and f.exists():
@@ -137,6 +185,24 @@ def main():
         f_export_state.unlink()
         warn("Reset trạng thái batch export (các thư mục batch-* cũ đã lỗi thời, "
              "batch mới sẽ đánh số lại từ 01).")
+
+    # ---- --redo-images: CHỈ xoá cache/thư mục ảnh (stage 4), KHÔNG đụng
+    # content/câu hỏi/review -> sinh lại ảnh mà 0 token cho stage 3/5/6.
+    # (nếu --redo-from <= 4 thì đã xoá ở trên rồi, tránh log/xoá 2 lần)
+    if args.redo_images and args.redo_from > 4:
+        if caches[4].exists():
+            caches[4].unlink()
+            log(f"♻️  Xoá cache stage 4: {caches[4].name} (chỉ ảnh, giữ content/câu hỏi)")
+
+    # ---- --redo-content: CHỈ xoá cache content (stage 3), KHÔNG đụng
+    # ảnh/câu hỏi/review -> sinh lại content mà 0 token cho stage 4/5/6.
+    # (nếu --redo-from <= 3 thì đã xoá ở trên rồi, tránh log/xoá 2 lần)
+    if args.redo_content and args.redo_from > 3:
+        if caches[3].exists():
+            caches[3].unlink()
+            log(f"♻️  Xoá cache stage 3: {caches[3].name} (chỉ content, giữ ảnh/câu hỏi)")
+        if images_dir.exists():
+            shutil.rmtree(images_dir)
 
     # ---- Stage 1: TOC ----
     if args.toc_file:
@@ -199,6 +265,12 @@ def main():
     if not structure:
         sys.exit("Không xác định được topic nào — kiểm tra lại PDF/mục lục.")
 
+    # ---- --limit: chỉ giữ N topic đầu để test nhanh (0 token, thuần cắt list) ----
+    if args.limit > 0 and len(structure) > args.limit:
+        structure = structure[:args.limit]
+        log(f"🧪 --limit {args.limit}: chỉ xử lý {len(structure)} topic đầu tiên "
+             "(test nhanh, tránh tốn token cho cả sách).")
+
     # ---- Guard 0 token: xác nhận mục lục TRƯỚC khi đốt quota AI ----
     # Mục lục sai (offset lệch, AI đoán nhầm) là lỗi đắt nhất: mọi stage sau
     # đều sinh từ page range này. Xem kỹ rồi hẵng Enter.
@@ -206,8 +278,8 @@ def main():
     if not args.yes and not args.dry_run and not content_cached:
         n_topics = len(structure)
         est = n_topics * (2 if args.no_validate else 3)
-        if not args.no_images:
-            est += n_topics
+        if not args.no_images and args.book_images:
+            est += n_topics   # 1 request img_filter/topic (infographic giờ 0 token)
         print(f"\n👀 Kiểm tra mục lục phía trên: {n_topics} topic, "
               f"ước tính ~{est} request AI.")
         print("   Sai page range? Ctrl+C, sửa work/01_toc.json (hoặc dùng "
@@ -218,10 +290,17 @@ def main():
             sys.exit("Không có TTY để xác nhận — chạy với --yes trong môi trường "
                      "không tương tác (Colab/CI).")
 
-    # ---- Guard phiên bản cache content (v1 markdown blob vs v2 LO JSON) ----
-    if content_cached and content_cached.get("_v") != CONTENT_VERSION:
-        sys.exit("Cache 03_content.json thuộc phiên bản cũ (markdown blob).\n"
-                 "Chạy lại với: --redo-from 3")
+    # ---- Guard phiên bản cache content (v1 markdown blob / v2 / v3 LO JSON) ----
+    # --redo-images bỏ qua guard này: stage 4 không đọc field nào của content
+    # (content_markdown() tự nhận diện mọi phiên bản khi render), nên dùng
+    # --redo-images trên content cache cũ vẫn an toàn — không cần sinh lại content.
+    if content_cached and content_cached.get("_v") != CONTENT_VERSION and not args.redo_images:
+        sys.exit("Cache 03_content.json thuộc phiên bản cũ (thiếu concept_overview/"
+                 "quick_review, prompt v3).\n"
+                 "  - Muốn nội dung được viết lại theo prompt mới (khuyến nghị): "
+                 "--redo-from 3\n"
+                 "  - Chỉ muốn sinh lại ảnh, GIỮ NGUYÊN content cũ: thêm --redo-images "
+                 "vào lệnh hiện tại")
 
     # ---- Stage 3-6: TOPIC-MAJOR — xong trọn gói từng topic ----
     # (content -> images -> questions -> review cho topic N rồi mới sang N+1;
@@ -233,7 +312,11 @@ def main():
     from stage_questions import generate_questions_one
 
     content = load_json(caches[3], {}) or {}
-    content["_v"] = CONTENT_VERSION
+    # Không "rửa sạch" tag phiên bản cũ khi đang bypass guard qua --redo-images:
+    # content thực tế vẫn ở shape cũ (chưa sinh lại), đóng dấu _v mới sẽ khiến
+    # lần chạy sau (không có --redo-images) không còn được nhắc nâng cấp nữa.
+    if not content or content.get("_v") == CONTENT_VERSION:
+        content["_v"] = CONTENT_VERSION
     images = load_json(caches[4], {}) or {}
     questions = load_json(caches[5], {}) or {}
     review = load_json(caches[6], {}) or {}
@@ -243,47 +326,64 @@ def main():
         from stage_review import review_one
         reviewer, with_pdf_flag = _build_reviewer(args, client)
 
+    # ---- Infographic: 1 HtmlRenderer (Chromium) dùng chung cả lần chạy ----
+    # (khởi động browser tốn ~1-2s, mở/đóng riêng mỗi topic sẽ chậm không
+    # cần thiết). Playwright là dependency TUỲ CHỌN — chưa cài thì cảnh báo
+    # 1 lần rồi chạy tiếp KHÔNG có ảnh infographic, không sập pipeline.
+    renderer = None
+    if not args.no_images and not args.no_infographic:
+        from html_render import HtmlRenderer, RendererUnavailable
+        try:
+            renderer = HtmlRenderer()
+        except RendererUnavailable as e:
+            warn(str(e))
+
     doc = fitz.open(args.pdf)
     aborted = None
     total = len(structure)
-    for idx, row in enumerate(structure, 1):
-        slug = row["topic_slug"]
-        steps_done = (slug in content
-                      and (args.no_images or slug in images)
-                      and slug in questions
-                      and (not args.review or slug in review))
-        if steps_done:
-            log(f"── Topic {idx}/{total}: {slug} ✓ (hoàn chỉnh, bỏ qua) ──")
-            continue
-        log(f"── Topic {idx}/{total}: {slug} — {row['topic_title']} ──")
-        try:
-            if slug not in content:
-                content[slug] = generate_content_one(doc, row, client, dpi=args.dpi)
-                save_json(caches[3], content)
-            if not args.no_images and slug not in images:
-                images[slug] = generate_images_one(doc, row, content[slug],
-                                                   client, images_dir,
-                                                   book_images=args.book_images)
-                save_json(caches[4], images)
-            if slug not in questions:
-                qs, dropped = generate_questions_one(row, content[slug], client,
-                                                     validate=not args.no_validate)
-                questions[slug] = qs
-                if dropped:
-                    questions.setdefault("_dropped", {})[slug] = dropped
-                save_json(caches[5], questions)
-            if args.review and (slug not in review or "error" in review.get(slug, {})):
-                wp = (doc, reviewer) if with_pdf_flag else None
-                review[slug] = review_one(row, content[slug],
-                                          questions.get(slug, []), reviewer, wp)
-                save_json(caches[6], review)
-        except GeminiError as e:
-            aborted = str(e)
-            warn(f"Dừng tại topic {idx}/{total} ({slug}): {e}")
-            warn(f"Đã hoàn chỉnh {idx-1} topic — vẫn export phần này. "
-                 "Chạy lại CHÍNH LỆNH CŨ để tiếp tục từ topic dở dang.")
-            break
-    doc.close()
+    try:
+        for idx, row in enumerate(structure, 1):
+            slug = row["topic_slug"]
+            steps_done = (slug in content
+                          and (args.no_images or slug in images)
+                          and slug in questions
+                          and (not args.review or slug in review))
+            if steps_done:
+                log(f"── Topic {idx}/{total}: {slug} ✓ (hoàn chỉnh, bỏ qua) ──")
+                continue
+            log(f"── Topic {idx}/{total}: {slug} — {row['topic_title']} ──")
+            try:
+                if slug not in content:
+                    content[slug] = generate_content_one(doc, row, client, dpi=args.dpi)
+                    save_json(caches[3], content)
+                if not args.no_images and slug not in images:
+                    images[slug] = generate_images_one(doc, row, content[slug], client,
+                                                       images_dir, book_images=args.book_images,
+                                                       infographic=not args.no_infographic,
+                                                       renderer=renderer)
+                    save_json(caches[4], images)
+                if slug not in questions:
+                    qs, dropped = generate_questions_one(row, content[slug], client,
+                                                         validate=not args.no_validate)
+                    questions[slug] = qs
+                    if dropped:
+                        questions.setdefault("_dropped", {})[slug] = dropped
+                    save_json(caches[5], questions)
+                if args.review and (slug not in review or "error" in review.get(slug, {})):
+                    wp = (doc, reviewer) if with_pdf_flag else None
+                    review[slug] = review_one(row, content[slug],
+                                              questions.get(slug, []), reviewer, wp)
+                    save_json(caches[6], review)
+            except GeminiError as e:
+                aborted = str(e)
+                warn(f"Dừng tại topic {idx}/{total} ({slug}): {e}")
+                warn(f"Đã hoàn chỉnh {idx-1} topic — vẫn export phần này. "
+                     "Chạy lại CHÍNH LỆNH CŨ để tiếp tục từ topic dở dang.")
+                break
+    finally:
+        doc.close()
+        if renderer:
+            renderer.close()
     questions.pop("_dropped", None)
 
     # ---- Stage 7: Export (full snapshot + delta batch) ----
@@ -312,7 +412,8 @@ def main():
                pdf_name=args.pdf.name, model="mock" if args.dry_run else args.model,
                only_slugs=set(new_slugs), label=f" [BATCH {n:02d} — {len(new_slugs)} topic MỚI]",
                content_format=args.content_format, subject=args.subject,
-               grade=args.grade, export_json=args.export_json, density=args.density)
+               grade=args.grade, export_json=args.export_json, density=args.density,
+               infographic=not args.no_infographic)
         # copy ảnh của riêng lô này vào batch để test upload trọn gói
         b_img = batch_dir / "images"
         for s in new_slugs:
@@ -344,7 +445,7 @@ def main():
            only_slugs=set(completed), label=" [FULL — snapshot tích luỹ]",
            extra_warnings=qc_warnings, content_format=args.content_format,
            subject=args.subject, grade=args.grade, export_json=args.export_json,
-           density=args.density)
+           density=args.density, infographic=not args.no_infographic)
     if args.review and review:
         from stage_review import write_report
         write_report(review, structure, out_dir / "review_report.md")

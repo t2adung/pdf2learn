@@ -1,3 +1,9 @@
 pymupdf>=1.24
 requests>=2.31
 python-dotenv>=1.0
+
+# Tuỳ chọn — chỉ cần nếu muốn có ảnh infographic (stage 4, xem html_render.py):
+#   pip install playwright
+#   playwright install chromium
+# Không cài vẫn chạy được toàn bộ pipeline, chỉ là topic không có ảnh infographic
+# (cảnh báo 1 lần, không lỗi). Có thể tắt hẳn cảnh báo bằng --no-infographic.

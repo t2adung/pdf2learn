@@ -6,7 +6,6 @@ THUẦN CODE, 0 token AI.
 Ràng buộc đã biết về bibeli:
 - Frontend dùng markdown-it/marked THUẦN => KHÔNG có mermaid.
   => tuyệt đối không sinh fence ```mermaid (sẽ hiện thành khối code xấu).
-  Mindmap đi đường ảnh SVG qua stage_images.
 - Bảng: markdown-it và marked đều bật table mặc định. Nếu bibeli tắt,
   đặt use_tables=False để đổ sang dạng danh sách.
 """
@@ -27,6 +26,7 @@ def content_markdown(entry: dict, images: list = None,
     return render(entry, images=images, use_tables=use_tables, density=density)
 
 
+H_OVERVIEW = "## 🧠 Khái niệm trọng tâm"
 H_OBJECTIVES = "## 🎯 Mục tiêu"
 H_HOOK = "## 🤔 Câu hỏi khởi động"
 H_TERMS = "## 🔑 Từ khoá cần nhớ"
@@ -34,6 +34,7 @@ H_MAIN = "## 📚 Nội dung chính"
 H_REAL = "## 🌍 Liên hệ thực tế"
 H_MISC = "## ⚠️ Dễ nhầm lẫn"
 H_HOOKS = "## 💡 Mẹo nhớ"
+H_REVIEW = "## ⭐ Ghi nhớ nhanh"
 H_IMAGES = "## 🖼️ Hình minh hoạ"
 
 
@@ -80,17 +81,21 @@ def _trim(s: str, max_words: int) -> str:
 #   full    : giữ nguyên mọi thứ (mặc định cũ)
 #   compact : mỗi section tối đa 3 point, point dài cắt còn 22 từ; bỏ ví dụ ở
 #             key_terms; giữ đủ section
-#   minimal : chỉ Mục tiêu + Nội dung chính (2 point/section, 18 từ) + Mindmap.
-#             Các phần Liên hệ/Dễ nhầm/Mẹo nhớ ẩn đi (đọc nhanh, ôn tập)
+#   minimal : chỉ Khái niệm trọng tâm + Mục tiêu + Nội dung chính (2 point/
+#             section, 18 từ) + Ghi nhớ nhanh. Các phần Liên hệ/Dễ nhầm/Mẹo
+#             nhớ ẩn đi (đọc nhanh, ôn tập)
 DENSITY = {
     "full":    {"max_points": 0, "max_words": 0,  "term_example": True,
-                "keep": {"objectives", "hook", "key_terms", "sections",
-                         "real_life", "misconceptions", "memory_hooks", "images"}},
+                "keep": {"concept_overview", "objectives", "hook", "key_terms",
+                         "sections", "real_life", "misconceptions",
+                         "memory_hooks", "quick_review", "images"}},
     "compact": {"max_points": 3, "max_words": 22, "term_example": False,
-                "keep": {"objectives", "hook", "key_terms", "sections",
-                         "real_life", "misconceptions", "memory_hooks", "images"}},
+                "keep": {"concept_overview", "objectives", "hook", "key_terms",
+                         "sections", "real_life", "misconceptions",
+                         "memory_hooks", "quick_review", "images"}},
     "minimal": {"max_points": 2, "max_words": 18, "term_example": False,
-                "keep": {"objectives", "sections", "images"}},
+                "keep": {"concept_overview", "objectives", "sections",
+                         "quick_review", "images"}},
 }
 
 
@@ -105,6 +110,11 @@ def render(lo: dict, images: list = None, use_tables: bool = True,
         return items[:mp] if mp > 0 else items
 
     p = []
+
+    if lo.get("concept_overview") and "concept_overview" in keep:
+        p.append(H_OVERVIEW)
+        p.append(f"> {_line(lo['concept_overview'])}")
+        p.append("")
 
     if lo.get("objectives") and "objectives" in keep:
         p.append(H_OBJECTIVES)
@@ -147,6 +157,14 @@ def render(lo: dict, images: list = None, use_tables: bool = True,
             icon = _line(s.get("icon_hint", ""))
             head = f"{icon} " if icon else ""
             p.append(f"### {head}{_line(s.get('heading',''))}")
+            formula = s.get("formula") or {}
+            if formula.get("expression"):
+                p.append(f"**Công thức:** `{_line(formula['expression'])}`")
+                for v in formula.get("variables") or []:
+                    sym, meaning = _line(v.get("symbol", "")), _line(v.get("meaning", ""))
+                    if sym or meaning:
+                        p.append(f"- **{sym}**: {meaning}")
+                p.append("")
             p += _bullets(_cap(s.get("points") or []), mw)
         p.append("")
 
@@ -171,6 +189,11 @@ def render(lo: dict, images: list = None, use_tables: bool = True,
     if lo.get("memory_hooks") and "memory_hooks" in keep:
         p.append(H_HOOKS)
         p += _bullets(_cap(lo["memory_hooks"]), mw)
+        p.append("")
+
+    if lo.get("quick_review") and "quick_review" in keep:
+        p.append(H_REVIEW)
+        p += _bullets(lo["quick_review"], mw)
         p.append("")
 
     if images and "images" in keep:

@@ -3,7 +3,8 @@
 """condense_csv.py — Hậu xử lý topics.csv ĐÃ XUẤT (0 token, thuần code).
 
 Làm 2 việc trên cột `content` (markdown):
-  1. ẢNH: bỏ ảnh trang sách (.jpg/.jpeg/.png), CHỈ GIỮ mindmap .svg.
+  1. ẢNH: bỏ ảnh trang sách (.jpg/.jpeg/.png) nhúng qua --book-images (mặc
+     định pipeline không nhúng ảnh nào, xem stage_images.py).
   2. GỌN (tuỳ chọn --trim): trong mỗi mục "### ..." của Nội dung chính, giữ tối
      đa N bullet đầu và bỏ bullet TRÙNG/GẦN TRÙNG. KHÔNG cắt cụt giữa câu
      (chỉ bỏ nguyên bullet dư) => không làm sai lệch ý từng câu.
@@ -119,7 +120,7 @@ def main():
         w.writerows(rows)
 
     print(f"✅ {args.out}")
-    print(f"   {len(rows)} topic | bỏ {img_removed} ảnh trang sách (giữ .svg)")
+    print(f"   {len(rows)} topic | bỏ {img_removed} ảnh trang sách")
     if args.trim:
         print(f"   gọn bullet: bỏ {bullet_removed} bullet trùng/dư (cap {args.max_points}/mục)")
     print(f"   Tổng từ: {total_before:,} -> {total_after:,} "

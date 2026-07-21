@@ -5,31 +5,39 @@ THUẦN CODE, 0 token AI.
 Format đích (theo mẫu lich_su_la_gi_learning_object.json):
 {
   "title", "subject", "grade", "prompt_version",
-  "objectives", "hook",
+  "concept_overview", "objectives", "hook",
   "key_terms":      [{term, definition, example}],
-  "sections":       [{heading, icon_hint, points}],
-  "mindmap_mermaid": "mindmap\\n  root((...))\\n    ...",   # code sinh từ cây
-  "real_life", "memory_hooks",
+  "sections":       [{heading, icon_hint, formula?, points}],
+  "real_life", "memory_hooks", "quick_review",
   "misconceptions": [{wrong, correct}],
+  "infographic_html": "<!doctype html>...",   # xem bên dưới
   "quiz": [{question, options[4], answer_index, explanation, bloom, difficulty}]
 }
 
 Khác biệt so với dữ liệu nội bộ (và lý do):
-- mindmap:   AI trả về CÂY {root, branches}; chuỗi mermaid do to_mermaid() sinh
-             => không bao giờ lỗi cú pháp, đổi cú pháp mermaid sau này 0 token.
 - quiz:      nội bộ dùng A/B/C/D + correct_answer + difficulty 1-3 (khớp template
              multichoice.csv). Mapper đổi sang options + answer_index + bloom/
              difficulty dạng chữ.
 - key_points: GIỮ NỘI BỘ, không xuất — nó là công cụ đảm bảo coverage câu hỏi
              (Stage 5) và mốc đối chiếu cho reviewer (Stage 6), không phải nội
              dung hiển thị cho người học.
+- infographic_html: NHÚNG THẲNG cả trang HTML (đủ <!doctype>/<style>) làm 1
+             string JSON — không phải file rời như stage_images.py ghi ra
+             images/. Gọi lại infographic_html.render() ngay tại bước export
+             (THUẦN CODE, 0 token, deterministic — không cần lưu trung gian).
+             "Mã hoá" ở đây chỉ là escape chuỗi JSON chuẩn (json.dumps tự lo
+             dấu ", xuống dòng...) — KHÔNG base64: base64 sẽ chỉ làm bloat
+             kích thước (~33%) trong khi JSON string đã an toàn 100% qua CSV
+             round-trip (đã có test), và frontend nhận về là dùng được ngay
+             (vd `<iframe srcdoc={value}>`) mà không cần decode gì thêm.
+             Rỗng ("") nếu Learning Object không có gì để vẽ.
 """
 import json
 import re
 
-from mindmap_svg import to_mermaid
+from infographic_html import render as render_infographic_html
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 
 # difficulty nội bộ 1-3 (khớp cột multichoice.csv) -> 2 trục của format đích.
 # 1 = nhớ/nhận biết, 2 = hiểu, 3 = vận dụng (định nghĩa ở QUESTIONS_PROMPT).
@@ -59,7 +67,8 @@ def map_question(q: dict) -> dict:
 
 def compose_learning_object(row: dict, lo: dict, questions: list,
                             subject: str = "", grade: str = "",
-                            include_quiz: bool = True) -> dict:
+                            include_quiz: bool = True,
+                            include_infographic: bool = True) -> dict:
     """Ghép bản ghi structure + Learning Object cache + câu hỏi -> JSON đích.
 
     Thứ tự key cố định theo file mẫu (deterministic — diff được giữa 2 lần chạy).
@@ -70,21 +79,26 @@ def compose_learning_object(row: dict, lo: dict, questions: list,
         "subject": subject,
         "grade": grade or _grade_from_level(row.get("level", "")),
         "prompt_version": PROMPT_VERSION,
+        "concept_overview": lo.get("concept_overview", ""),
         "objectives": lo.get("objectives", []),
         "hook": lo.get("hook", ""),
         "key_terms": lo.get("key_terms", []),
         "sections": [{
             "heading": s.get("heading", ""),
             "icon_hint": s.get("icon_hint", ""),
+            **({"formula": s["formula"]} if s.get("formula") else {}),
             "points": s.get("points", []),
         } for s in lo.get("sections", [])],
         "real_life": lo.get("real_life", []),
         "memory_hooks": lo.get("memory_hooks", []),
         "misconceptions": lo.get("misconceptions", []),
+        "quick_review": lo.get("quick_review", []),
     }
-    mm = lo.get("mindmap")
-    if mm and mm.get("root"):
-        out["mindmap_mermaid"] = to_mermaid(mm)
+    if include_infographic:
+        try:
+            out["infographic_html"] = render_infographic_html(lo, row["topic_title"])
+        except ValueError:
+            out["infographic_html"] = ""  # Learning Object rỗng (vd cache v1 cũ)
     if include_quiz:
         out["quiz"] = [map_question(q) for q in (questions or [])
                        if q.get("correct_answer") in LETTER_INDEX]
