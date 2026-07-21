@@ -90,6 +90,7 @@ rõ, export partial rồi thoát — quota reset ~14-15h chiều giờ VN.
 | `--no-infographic` | Tắt vẽ ảnh infographic tổng hợp kiến thức (HTML/CSS + Chromium, 0 token). Mặc định BẬT — tự bỏ qua (cảnh báo, không lỗi) nếu chưa cài Playwright |
 | `--book-images` | Trích thêm ảnh gốc từ trang PDF + AI lọc (+1 request/topic), liệt kê riêng, không ghép vào infographic |
 | `--redo-images` | Chỉ xoá cache + thư mục ảnh (stage 4) rồi sinh lại — giữ nguyên content/câu hỏi đã có |
+| `--redo-content` | Chỉ xoá cache content (stage 3) rồi sinh lại — giữ nguyên câu hỏi/ảnh đã có. Dùng thay `--redo-from 3` khi câu hỏi cũ vẫn dùng được (lưu ý: có thể lệch coverage nếu nội dung mới đổi nhiều) |
 | `--no-validate` | Bỏ pass tự giải kiểm chứng đáp án (không khuyến nghị) |
 | `--review` | Bật stage 6: model thứ hai thẩm định content + câu hỏi |
 | `--reviewer X` | `groq` (Llama 70B, độc lập nhà cung cấp — mặc định) / `openrouter` (DeepSeek R1) / `gemini-pro` (duy nhất đối chiếu được PDF gốc) |

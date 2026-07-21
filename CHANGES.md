@@ -96,6 +96,28 @@ python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
 
 ---
 
+## Cập nhật 14: --redo-content — sinh lại content, GIỮ NGUYÊN câu hỏi đã có
+
+Ghi nhận từ người dùng: `--redo-from 3` xoá luôn cả stage 5 (câu hỏi) dù chỉ
+muốn viết lại content — lãng phí token sinh lại câu hỏi trong khi câu hỏi cũ
+vẫn dùng tốt.
+
+- `main.py`: thêm `--redo-content` (đối xứng với `--redo-images` đã có ở
+  Cập nhật 8) — CHỈ xoá `03_content.json`, KHÔNG đụng ảnh/câu hỏi/review.
+  Vì file bị XOÁ (không chỉ bypass check), guard phiên bản content
+  (`CONTENT_VERSION`) tự động không còn gì để chặn — không cần sửa gì thêm
+  ở đó. Kết hợp `--redo-images` nếu muốn ảnh cũng cập nhật theo content mới.
+- ⚠️ Lưu ý ghi rõ trong help text: câu hỏi giữ lại được sinh từ `key_points`
+  CŨ — nếu nội dung mới thay đổi nhiều, câu hỏi có thể thiếu phủ hoặc lệch
+  so với bài học mới. Đây là đánh đổi người dùng tự cân nhắc, không phải
+  hành vi ẩn.
+
+```bash
+python3 main.py sach.pdf --level "Lớp 6" --redo-content --export-json
+```
+
+---
+
 ## Cập nhật 13: --limit N — test AI thật với vài topic trước khi chạy cả sách
 
 Theo yêu cầu: thêm cờ để test nhanh chất lượng/format bằng AI thật (không

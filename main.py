@@ -98,6 +98,15 @@ def main():
                          "NGUYÊN content/câu hỏi đã có, không tốn token stage 3/5/6. "
                          "Tiện khi bật/tắt --book-images hoặc đổi bộ lọc ảnh mà không "
                          "muốn sinh lại cả bài học.")
+    ap.add_argument("--redo-content", action="store_true",
+                    help="CHỈ xoá cache content (stage 3) rồi sinh lại — GIỮ NGUYÊN "
+                         "câu hỏi/ảnh/review đã có, không tốn token stage 4/5/6. Dùng "
+                         "thay --redo-from 3 khi câu hỏi cũ vẫn dùng được, khỏi sinh "
+                         "lại tốn token. Kết hợp --redo-images nếu muốn ảnh cũng cập "
+                         "nhật theo content mới. LƯU Ý: câu hỏi cũ sinh từ key_points "
+                         "CŨ — nếu nội dung mới thay đổi nhiều, câu hỏi có thể thiếu "
+                         "phủ hoặc lệch so với bài học mới; chạy quality_checks/xem "
+                         "lại thủ công nếu nghi ngờ.")
     ap.add_argument("--no-validate", action="store_true",
                     help="bỏ qua pass kiểm chứng đáp án ở stage 5")
     ap.add_argument("--review", action="store_true",
@@ -184,6 +193,14 @@ def main():
         if caches[4].exists():
             caches[4].unlink()
             log(f"♻️  Xoá cache stage 4: {caches[4].name} (chỉ ảnh, giữ content/câu hỏi)")
+
+    # ---- --redo-content: CHỈ xoá cache content (stage 3), KHÔNG đụng
+    # ảnh/câu hỏi/review -> sinh lại content mà 0 token cho stage 4/5/6.
+    # (nếu --redo-from <= 3 thì đã xoá ở trên rồi, tránh log/xoá 2 lần)
+    if args.redo_content and args.redo_from > 3:
+        if caches[3].exists():
+            caches[3].unlink()
+            log(f"♻️  Xoá cache stage 3: {caches[3].name} (chỉ content, giữ ảnh/câu hỏi)")
         if images_dir.exists():
             shutil.rmtree(images_dir)
 
