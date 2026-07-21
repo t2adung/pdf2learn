@@ -21,6 +21,7 @@ Dùng:
   python main.py sach.pdf --level "Lớp 6"
 
   python main.py sach.pdf --dry-run          # test KHÔNG cần API key (mock AI)
+  python main.py sach.pdf --limit 3          # test AI thật, chỉ 3 topic đầu (tránh tốn token)
   python main.py sach.pdf --redo-from 5      # xoá cache stage 5+, sinh lại câu hỏi
   python main.py sach.pdf --no-images --no-validate   # nhanh, ít request
 """
@@ -67,6 +68,10 @@ def main():
                          "thay cho bookmark/AI — 0 token, chính xác 100%%")
     ap.add_argument("--yes", action="store_true",
                     help="bỏ bước xác nhận mục lục trước khi gọi AI")
+    ap.add_argument("--limit", type=int, default=0, metavar="N",
+                    help="CHỈ xử lý N topic đầu tiên rồi export — test nhanh chất "
+                         "lượng/format trước khi chạy cả sách, tránh tốn token oan. "
+                         "0 = không giới hạn (mặc định). Vd: --limit 3")
     ap.add_argument("--interval", type=float, default=6.0,
                     help="giây giữa 2 request (free tier ~10 RPM -> 6s)")
     ap.add_argument("--dpi", type=int, default=0,
@@ -242,6 +247,12 @@ def main():
 
     if not structure:
         sys.exit("Không xác định được topic nào — kiểm tra lại PDF/mục lục.")
+
+    # ---- --limit: chỉ giữ N topic đầu để test nhanh (0 token, thuần cắt list) ----
+    if args.limit > 0 and len(structure) > args.limit:
+        structure = structure[:args.limit]
+        log(f"🧪 --limit {args.limit}: chỉ xử lý {len(structure)} topic đầu tiên "
+             "(test nhanh, tránh tốn token cho cả sách).")
 
     # ---- Guard 0 token: xác nhận mục lục TRƯỚC khi đốt quota AI ----
     # Mục lục sai (offset lệch, AI đoán nhầm) là lỗi đắt nhất: mọi stage sau

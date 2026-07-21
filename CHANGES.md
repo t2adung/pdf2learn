@@ -96,6 +96,33 @@ python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
 
 ---
 
+## Cập nhật 13: --limit N — test AI thật với vài topic trước khi chạy cả sách
+
+Theo yêu cầu: thêm cờ để test nhanh chất lượng/format bằng AI thật (không
+phải MockGemini của `--dry-run`) mà không tốn token cho cả cuốn sách.
+
+- `main.py`: `--limit N` (mặc định 0 = không giới hạn) — cắt `structure`
+  (danh sách topic) còn N phần tử đầu NGAY SAU Stage 2 (structure), TRƯỚC
+  cả guard ước tính request và vòng lặp Stage 3-6. 0 token cho việc cắt
+  (thuần slice list) — Stage 1-2 (TOC/structure) vẫn chạy cho TOÀN BỘ sách
+  như cũ (rẻ/miễn phí, cần đủ để biết cấu trúc thật), chỉ Stage 3-6 (content/
+  ảnh/câu hỏi — phần tốn token) mới bị giới hạn.
+- 02_structure.json cache LUÔN lưu đủ toàn bộ topic (cắt xảy ra sau khi
+  load/build, không ảnh hưởng cache) — nên bỏ `--limit` ở lần chạy sau sẽ tự
+  động xử lý tiếp các topic còn lại (resume đúng nghĩa, không sinh lại N
+  topic đã test), không cần thêm cờ gì khác.
+- Export (topics.csv/multichoice.csv/manifest.json) tự nhiên chỉ chứa đúng
+  N topic đã xử lý — dùng ngay để test import thử mà không cần đợi/tốn token
+  cho cả sách.
+
+```bash
+python3 main.py sach.pdf --level "Lớp 6" --limit 3   # test 3 topic đầu, AI thật
+# ưng ý -> chạy tiếp phần còn lại (bỏ --limit):
+python3 main.py sach.pdf --level "Lớp 6"
+```
+
+---
+
 ## Cập nhật 12: cảnh báo bẫy --redo-from lặp lại sau khi bị ngắt giữa chừng
 
 Ghi nhận từ người dùng: chạy `--redo-from 3`, bị ngắt giữa chừng (Ctrl+C,

@@ -24,10 +24,15 @@ Reviewer (tuỳ chọn): Groq / OpenRouter / Gemini Pro.
 # 1. Test pipeline KHÔNG cần API key (mock AI) — nên chạy đầu tiên:
 python main.py sach.pdf --dry-run
 
-# 2. Chạy thật:
+# 2. Test với AI thật nhưng CHỈ 3 topic — xem chất lượng/format thật trước
+#    khi tốn token cho cả sách:
+python main.py sach.pdf --level "Lớp 6" --limit 3
+
+# 3. Ưng ý -> bỏ --limit, chạy tiếp phần còn lại (resume, không sinh lại 3
+#    topic đã test ở bước 2):
 python main.py sach.pdf --level "Lớp 6"
 
-# 3. Tiết kiệm quota (khuyến nghị cho sách dài, free tier):
+# 4. Tiết kiệm quota (khuyến nghị cho sách dài, free tier):
 python main.py sach.pdf --level "Lớp 6" --no-images
 
 # 4. Có thẩm định chéo bởi model thứ hai:
@@ -80,6 +85,7 @@ rõ, export partial rồi thoát — quota reset ~14-15h chiều giờ VN.
 |---|---|
 | `--level "Lớp 6"` | Giá trị cột `level` (mặc định "Lớp 6") |
 | `--dry-run` | MockGemini, không cần API key — kiểm tra pipeline & format output |
+| `--limit N` | Chỉ xử lý N topic đầu tiên rồi export — test chất lượng/format với AI thật mà không tốn token cả sách. Bỏ cờ ở lần chạy sau để resume phần còn lại |
 | `--no-images` | Bỏ stage ảnh hoàn toàn (khỏi cần cài Playwright), lấy ảnh sau bằng cách chạy lại bỏ cờ này |
 | `--no-infographic` | Tắt vẽ ảnh infographic tổng hợp kiến thức (HTML/CSS + Chromium, 0 token). Mặc định BẬT — tự bỏ qua (cảnh báo, không lỗi) nếu chưa cài Playwright |
 | `--book-images` | Trích thêm ảnh gốc từ trang PDF + AI lọc (+1 request/topic), liệt kê riêng, không ghép vào infographic |
