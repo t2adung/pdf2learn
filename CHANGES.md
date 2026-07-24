@@ -1,5 +1,14 @@
 # pdf2learn v2 — Content chuyển từ Markdown blob sang Learning Object JSON
 
+> **v4 (revert xử lý ảnh):** ảnh minh hoạ chính của topic quay lại **sơ đồ tư
+> duy (mindmap) SVG** vẽ THUẦN CODE (0 token, 0 dependency). Bỏ hẳn nhánh
+> infographic HTML/PNG (Playwright/headless Chromium) và field `infographic_html`
+> trong JSON — bibeli nay tự dựng phần hiển thị sinh động bằng HTML ở frontend,
+> pipeline chỉ cần xuất Markdown (`.md`) + 1 ảnh mindmap `.svg`. Content vẫn giữ
+> mọi cải tiến văn phong của v3 (concept_overview / quick_review / formula), chỉ
+> thêm lại field `mindmap`. Cache content cũ (v3) cần `--redo-from 3` để có
+> mindmap. Cờ `--no-infographic` đổi tên thành `--no-mindmap`.
+
 ## Cài đặt lần đầu (macOS / Linux)
 
 Yêu cầu Python 3.9+ (khuyến nghị 3.12). Kiểm tra: `python3 --version`.

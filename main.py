@@ -6,10 +6,9 @@ Pipeline 6 stage, kết quả trung gian lưu ở runs/<tên-pdf>/work/:
   1. TOC        : bookmark PDF (code) hoặc AI suy ra mục lục
   2. Structure  : chuẩn hoá + sinh slug/order (code, deterministic)
   3. Content    : mỗi topic -> Markdown bài học + key_points (AI, chunk theo trang)
-  4. Images     : dựng infographic tổng hợp kiến thức bằng HTML/CSS + chụp
-                  PNG bằng headless Chromium (0 token, mặc định; cần cài
-                  Playwright, xem README); tuỳ chọn trích thêm ảnh gốc PDF +
-                  AI lọc (--book-images)
+  4. Images     : vẽ sơ đồ tư duy (mindmap) SVG bằng code từ Learning Object
+                  (0 token, mặc định, không cần dependency ngoài); tuỳ chọn
+                  trích thêm ảnh gốc PDF + AI lọc (--book-images)
   5. Questions  : MCQ theo key_points (coverage) + pass validation đáp án
   6. Export     : CSV UTF-8 BOM đúng template + manifest.json
 
@@ -35,9 +34,10 @@ from utils import load_json, log, save_json, warn
 
 # Phiên bản shape của 03_content.json. v2 = Learning Object JSON
 # (objectives/sections/mindmap/...) thay cho blob content_markdown (v1).
-# v3 = bỏ "mindmap", thêm "concept_overview" + "quick_review" + "formula"
-# trong section (nội dung sinh động/dễ hiểu hơn, xem stage_content.py).
-CONTENT_VERSION = 3
+# v3 = thêm "concept_overview" + "quick_review" + "formula" trong section
+# (nội dung sinh động/dễ hiểu hơn). v4 = đưa "mindmap" trở lại (ảnh chính của
+# topic quay về sơ đồ tư duy SVG vẽ bằng code, bỏ infographic HTML/PNG).
+CONTENT_VERSION = 4
 
 
 def main():
@@ -85,14 +85,13 @@ def main():
                     help="sinh content + câu hỏi trong 1 request/topic "
                          "(tiết kiệm ~50% request stage 3+5; xem README về trade-off)")
     ap.add_argument("--no-images", action="store_true", help="bỏ qua stage 4")
-    ap.add_argument("--no-infographic", action="store_true",
-                    help="tắt vẽ ảnh infographic tổng hợp kiến thức (HTML/CSS + "
-                         "headless Chromium, 0 token). Mặc định BẬT — đây là ảnh "
-                         "chính của topic. Tự bỏ qua (cảnh báo, không lỗi) nếu chưa "
-                         "cài Playwright — xem README.")
+    ap.add_argument("--no-mindmap", action="store_true",
+                    help="tắt vẽ ảnh sơ đồ tư duy (mindmap SVG, vẽ bằng code, "
+                         "0 token, 0 dependency). Mặc định BẬT — đây là ảnh chính "
+                         "của topic.")
     ap.add_argument("--book-images", action="store_true",
                     help="nhúng THÊM ảnh trích từ trang PDF (AI lọc, +1 request/topic). "
-                         "Mặc định TẮT. Liệt kê RIÊNG, không ghép vào infographic.")
+                         "Mặc định TẮT. Liệt kê RIÊNG, tách khỏi ảnh mindmap.")
     ap.add_argument("--redo-images", action="store_true",
                     help="CHỈ xoá cache + thư mục ảnh (stage 4) rồi sinh lại — GIỮ "
                          "NGUYÊN content/câu hỏi đã có, không tốn token stage 3/5/6. "
@@ -279,7 +278,7 @@ def main():
         n_topics = len(structure)
         est = n_topics * (2 if args.no_validate else 3)
         if not args.no_images and args.book_images:
-            est += n_topics   # 1 request img_filter/topic (infographic giờ 0 token)
+            est += n_topics   # 1 request img_filter/topic (mindmap SVG là 0 token)
         print(f"\n👀 Kiểm tra mục lục phía trên: {n_topics} topic, "
               f"ước tính ~{est} request AI.")
         print("   Sai page range? Ctrl+C, sửa work/01_toc.json (hoặc dùng "
@@ -295,12 +294,13 @@ def main():
     # (content_markdown() tự nhận diện mọi phiên bản khi render), nên dùng
     # --redo-images trên content cache cũ vẫn an toàn — không cần sinh lại content.
     if content_cached and content_cached.get("_v") != CONTENT_VERSION and not args.redo_images:
-        sys.exit("Cache 03_content.json thuộc phiên bản cũ (thiếu concept_overview/"
-                 "quick_review, prompt v3).\n"
-                 "  - Muốn nội dung được viết lại theo prompt mới (khuyến nghị): "
-                 "--redo-from 3\n"
+        sys.exit("Cache 03_content.json thuộc phiên bản cũ (thiếu field 'mindmap' "
+                 "của prompt v4).\n"
+                 "  - Muốn nội dung được viết lại theo prompt mới (khuyến nghị, có "
+                 "mindmap để vẽ ảnh): --redo-from 3\n"
                  "  - Chỉ muốn sinh lại ảnh, GIỮ NGUYÊN content cũ: thêm --redo-images "
-                 "vào lệnh hiện tại")
+                 "vào lệnh hiện tại (LƯU Ý: content cũ không có 'mindmap' -> topic sẽ "
+                 "không có ảnh mindmap)")
 
     # ---- Stage 3-6: TOPIC-MAJOR — xong trọn gói từng topic ----
     # (content -> images -> questions -> review cho topic N rồi mới sang N+1;
@@ -326,18 +326,6 @@ def main():
         from stage_review import review_one
         reviewer, with_pdf_flag = _build_reviewer(args, client)
 
-    # ---- Infographic: 1 HtmlRenderer (Chromium) dùng chung cả lần chạy ----
-    # (khởi động browser tốn ~1-2s, mở/đóng riêng mỗi topic sẽ chậm không
-    # cần thiết). Playwright là dependency TUỲ CHỌN — chưa cài thì cảnh báo
-    # 1 lần rồi chạy tiếp KHÔNG có ảnh infographic, không sập pipeline.
-    renderer = None
-    if not args.no_images and not args.no_infographic:
-        from html_render import HtmlRenderer, RendererUnavailable
-        try:
-            renderer = HtmlRenderer()
-        except RendererUnavailable as e:
-            warn(str(e))
-
     doc = fitz.open(args.pdf)
     aborted = None
     total = len(structure)
@@ -359,8 +347,7 @@ def main():
                 if not args.no_images and slug not in images:
                     images[slug] = generate_images_one(doc, row, content[slug], client,
                                                        images_dir, book_images=args.book_images,
-                                                       infographic=not args.no_infographic,
-                                                       renderer=renderer)
+                                                       mindmap=not args.no_mindmap)
                     save_json(caches[4], images)
                 if slug not in questions:
                     qs, dropped = generate_questions_one(row, content[slug], client,
@@ -382,8 +369,6 @@ def main():
                 break
     finally:
         doc.close()
-        if renderer:
-            renderer.close()
     questions.pop("_dropped", None)
 
     # ---- Stage 7: Export (full snapshot + delta batch) ----
@@ -412,8 +397,7 @@ def main():
                pdf_name=args.pdf.name, model="mock" if args.dry_run else args.model,
                only_slugs=set(new_slugs), label=f" [BATCH {n:02d} — {len(new_slugs)} topic MỚI]",
                content_format=args.content_format, subject=args.subject,
-               grade=args.grade, export_json=args.export_json, density=args.density,
-               infographic=not args.no_infographic)
+               grade=args.grade, export_json=args.export_json, density=args.density)
         # copy ảnh của riêng lô này vào batch để test upload trọn gói
         b_img = batch_dir / "images"
         for s in new_slugs:
@@ -445,7 +429,7 @@ def main():
            only_slugs=set(completed), label=" [FULL — snapshot tích luỹ]",
            extra_warnings=qc_warnings, content_format=args.content_format,
            subject=args.subject, grade=args.grade, export_json=args.export_json,
-           density=args.density, infographic=not args.no_infographic)
+           density=args.density)
     if args.review and review:
         from stage_review import write_report
         write_report(review, structure, out_dir / "review_report.md")

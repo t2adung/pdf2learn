@@ -43,4 +43,4 @@
 - Học lịch sử để hiểu hiện tại, định hướng tương lai.
 
 ## 🖼️ Hình minh hoạ
-![Ảnh minh hoạ](ls-bai-1_01.jpg)
+![Sơ đồ tư duy](ls-bai-1_mindmap.svg)

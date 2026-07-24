@@ -8,9 +8,9 @@ Format đích (theo mẫu lich_su_la_gi_learning_object.json):
   "concept_overview", "objectives", "hook",
   "key_terms":      [{term, definition, example}],
   "sections":       [{heading, icon_hint, formula?, points}],
+  "mindmap":        {root, branches:[{label, children}]},
   "real_life", "memory_hooks", "quick_review",
   "misconceptions": [{wrong, correct}],
-  "infographic_html": "<!doctype html>...",   # xem bên dưới
   "quiz": [{question, options[4], answer_index, explanation, bloom, difficulty}]
 }
 
@@ -21,23 +21,17 @@ Khác biệt so với dữ liệu nội bộ (và lý do):
 - key_points: GIỮ NỘI BỘ, không xuất — nó là công cụ đảm bảo coverage câu hỏi
              (Stage 5) và mốc đối chiếu cho reviewer (Stage 6), không phải nội
              dung hiển thị cho người học.
-- infographic_html: NHÚNG THẲNG cả trang HTML (đủ <!doctype>/<style>) làm 1
-             string JSON — không phải file rời như stage_images.py ghi ra
-             images/. Gọi lại infographic_html.render() ngay tại bước export
-             (THUẦN CODE, 0 token, deterministic — không cần lưu trung gian).
-             "Mã hoá" ở đây chỉ là escape chuỗi JSON chuẩn (json.dumps tự lo
-             dấu ", xuống dòng...) — KHÔNG base64: base64 sẽ chỉ làm bloat
-             kích thước (~33%) trong khi JSON string đã an toàn 100% qua CSV
-             round-trip (đã có test), và frontend nhận về là dùng được ngay
-             (vd `<iframe srcdoc={value}>`) mà không cần decode gì thêm.
-             Rỗng ("") nếu Learning Object không có gì để vẽ.
+- mindmap:   xuất NGUYÊN cây dữ liệu {root, branches} — frontend (bibeli) tự
+             quyết cách hiển thị. Ảnh SVG sơ đồ tư duy do stage_images.py vẽ và
+             ghi ra images/ (file rời), không nhúng vào JSON này.
+             (v3 từng nhúng "infographic_html" — cả trang HTML dạng string —
+             vào JSON. Đã bỏ: bibeli nay tự dựng phần hiển thị sinh động bằng
+             HTML nên pipeline không cần sinh HTML nữa.)
 """
 import json
 import re
 
-from infographic_html import render as render_infographic_html
-
-PROMPT_VERSION = "v3"
+PROMPT_VERSION = "v4"
 
 # difficulty nội bộ 1-3 (khớp cột multichoice.csv) -> 2 trục của format đích.
 # 1 = nhớ/nhận biết, 2 = hiểu, 3 = vận dụng (định nghĩa ở QUESTIONS_PROMPT).
@@ -67,8 +61,7 @@ def map_question(q: dict) -> dict:
 
 def compose_learning_object(row: dict, lo: dict, questions: list,
                             subject: str = "", grade: str = "",
-                            include_quiz: bool = True,
-                            include_infographic: bool = True) -> dict:
+                            include_quiz: bool = True) -> dict:
     """Ghép bản ghi structure + Learning Object cache + câu hỏi -> JSON đích.
 
     Thứ tự key cố định theo file mẫu (deterministic — diff được giữa 2 lần chạy).
@@ -89,16 +82,12 @@ def compose_learning_object(row: dict, lo: dict, questions: list,
             **({"formula": s["formula"]} if s.get("formula") else {}),
             "points": s.get("points", []),
         } for s in lo.get("sections", [])],
+        "mindmap": lo.get("mindmap", {}),
         "real_life": lo.get("real_life", []),
         "memory_hooks": lo.get("memory_hooks", []),
         "misconceptions": lo.get("misconceptions", []),
         "quick_review": lo.get("quick_review", []),
     }
-    if include_infographic:
-        try:
-            out["infographic_html"] = render_infographic_html(lo, row["topic_title"])
-        except ValueError:
-            out["infographic_html"] = ""  # Learning Object rỗng (vd cache v1 cũ)
     if include_quiz:
         out["quiz"] = [map_question(q) for q in (questions or [])
                        if q.get("correct_answer") in LETTER_INDEX]

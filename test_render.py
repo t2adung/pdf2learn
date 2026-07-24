@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""test_render.py — Nghiệm thu bước 1-2. Chạy: python3 test_render.py
-KHÔNG gọi API, KHÔNG cần key. 0 token.
+"""test_render.py — Nghiệm thu render markdown + mindmap SVG (thuần code, 0 token).
+Chạy: python3 test_render.py — KHÔNG gọi API, KHÔNG cần key.
 """
 import csv
 import io
 import sys
 
-from infographic_html import render as render_infographic_html
+from mindmap_svg import to_mermaid, to_svg, _validate
 from render_markdown import render
 
 LO = {
@@ -32,6 +32,18 @@ LO = {
          "points": ["Hiểu nguồn gốc của mọi sự vật.",
                     "Rút kinh nghiệm để định hướng tương lai."]},
     ],
+    "mindmap": {
+        "root": "Lịch sử là gì",
+        "branches": [
+            {"label": "Sự biến đổi",
+             "children": ["Mọi vật thay đổi theo thời gian", "Con người và xã hội cũng vậy"]},
+            {"label": "Lịch sử",
+             "children": ["Tất cả những gì đã xảy ra", "Khoa học phục dựng quá khứ"]},
+            {"label": "Môn Lịch sử",
+             "children": ["Tìm hiểu xã hội loài người", "Từ khi có con người đến nay"]},
+            {"label": "Vì sao cần học",
+             "children": ["Hiểu nguồn gốc", "Hiểu hiện tại", "Định hướng tương lai"]},
+        ]},
     "real_life": ["Album ảnh cũ của ông bà ghi lại lịch sử của gia đình em."],
     "memory_hooks": ["Lịch sử = ĐÃ + XẢY RA. Đã xảy ra rồi thì là lịch sử, dù mới hôm qua."],
     "misconceptions": [
@@ -51,8 +63,20 @@ def check(name, cond, detail=""):
         fails.append(name)
 
 
-# --- 1. markdown ---
-md = render(LO, images=[{"file": "ls-bai-1_01.jpg", "caption": "Ảnh minh hoạ"}])
+# --- 1. mindmap SVG (thuần code, 0 token — không nhờ AI vẽ nên không lỗi cú pháp) ---
+check("mindmap hợp lệ", _validate(LO["mindmap"]) == [], str(_validate(LO["mindmap"])))
+svg = to_svg(LO["mindmap"], "Lịch sử là gì?")
+check("SVG mở/đóng đúng", svg.startswith("<svg") and svg.rstrip().endswith("</svg>"))
+check("SVG giữ dấu tiếng Việt", "Định hướng tương lai" in svg)
+check("SVG escape XML", "&amp;" in to_svg({"root": "A & B", "branches": LO["mindmap"]["branches"]}))
+
+mer = to_mermaid(LO["mindmap"])
+check("mermaid bắt đầu đúng", mer.startswith("mindmap\n  root(("))
+check("mermaid không còn ký tự phá cú pháp",
+      not any(c in ln for ln in mer.splitlines()[2:] for c in "(),:;"))
+
+# --- 2. markdown ---
+md = render(LO, images=[{"file": "ls-bai-1_mindmap.svg", "caption": "Sơ đồ tư duy"}])
 check("KHÔNG có fence mermaid (bibeli dùng markdown-it thuần)", "```mermaid" not in md)
 check("có heading Khái niệm trọng tâm", "## 🧠 Khái niệm trọng tâm" in md)
 check("concept_overview nằm trong blockquote", "\n> Lịch sử là tất cả" in md)
@@ -61,7 +85,7 @@ check("hook nằm trong blockquote", "\n> Chiếc điện thoại" in md)
 check("có công thức section trong khối code", "`Không có công thức, dùng thử render`" in md)
 check("có biến số của công thức", "**t**: mốc thời gian (năm)" in md)
 check("có heading Ghi nhớ nhanh", "## ⭐ Ghi nhớ nhanh" in md)
-check("ảnh tham chiếu filename trần", "![Ảnh minh hoạ](ls-bai-1_01.jpg)" in md)
+check("ảnh mindmap tham chiếu filename trần", "![Sơ đồ tư duy](ls-bai-1_mindmap.svg)" in md)
 
 # BẪY: bảng markdown phải còn đúng 3 cột
 tbl = [l for l in md.splitlines() if l.startswith("|") and "Quá khứ" in l]
@@ -71,7 +95,7 @@ raw = tbl[0].replace("\\|", "")
 check("dòng bảng vẫn đúng 3 cột", raw.count("|") == 4, f"{raw.count('|')} thanh dọc")
 check("xuống dòng trong ô đã bị làm phẳng", "Mốc chia theo thời gian" in md)
 
-# --- 2. sống sót qua CSV round-trip ---
+# --- 3. sống sót qua CSV round-trip ---
 buf = io.StringIO()
 w = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
 w.writerow(["topic_slug", "content"])
@@ -80,41 +104,9 @@ buf.seek(0)
 back = list(csv.reader(buf))[1][1]
 check("markdown sống sót round-trip CSV", back == md)
 
-# --- 3. bản không dùng bảng (nếu bibeli tắt table) ---
+# --- 4. bản không dùng bảng (nếu bibeli tắt table) ---
 md2 = render(LO, use_tables=False)
 check("use_tables=False không sinh bảng", "| --- |" not in md2 and "❌" in md2)
-
-# --- 4. infographic HTML (thuần code, 0 token — không phải AI vẽ chữ nên
-# KHÔNG BAO GIỜ sai chính tả tiếng Việt) ---
-ihtml = render_infographic_html(LO, 'Bài 1: Lịch sử là gì? & "khoa học" <thử ký tự lạ>')
-check("HTML mở/đóng đúng", ihtml.startswith("<!doctype html>") and ihtml.rstrip().endswith("</html>"))
-check("tiêu đề được escape đúng (ký tự đặc biệt không phá layout)",
-      "&lt;thử ký tự lạ&gt;" in ihtml and "&amp;" in ihtml and "&quot;khoa học&quot;" in ihtml)
-check("có khối Khái niệm trọng tâm", "Khái niệm trọng tâm" in ihtml)
-check("có công thức trong khối", "Không có công thức, dùng thử render" in ihtml)
-check("có khối Ghi nhớ nhanh", "Ghi nhớ nhanh" in ihtml)
-check("dấu | trong key_terms giữ nguyên (HTML text, không phá cú pháp)",
-      "Quá khứ | Hiện tại" in ihtml)
-try:
-    render_infographic_html({}, "Bài rỗng")
-    check("Learning Object rỗng -> raise ValueError", False)
-except ValueError:
-    check("Learning Object rỗng -> raise ValueError", True)
-
-# --- 5. render PNG bằng headless Chromium (TUỲ CHỌN — bỏ qua nếu chưa cài
-# Playwright, xem requirements.txt; test suite vẫn 0 token/0 dependency bắt buộc) ---
-png = None
-try:
-    from html_render import HtmlRenderer, RendererUnavailable
-    try:
-        _r = HtmlRenderer()
-        png = _r.render_png(ihtml)
-        _r.close()
-        check("render PNG bằng Chromium thành công", len(png) > 1000)
-    except RendererUnavailable as e:
-        print(f"⚠️  Bỏ qua test render PNG (không bắt buộc) — {e}")
-except ImportError:
-    print("⚠️  Bỏ qua test render PNG — chưa cài playwright (không bắt buộc, xem requirements.txt).")
 
 print()
 if fails:
@@ -123,11 +115,6 @@ if fails:
 print("✅ Tất cả check đã qua. 0 token đã dùng.")
 with open("preview_content.md", "w", encoding="utf-8") as f:
     f.write(md)
-with open("preview_infographic.html", "w", encoding="utf-8") as f:
-    f.write(ihtml)
-preview_files = "preview_content.md, preview_infographic.html"
-if png:
-    with open("preview_infographic.png", "wb") as f:
-        f.write(png)
-    preview_files += ", preview_infographic.png"
-print(f"   Xem: {preview_files}")
+with open("preview_mindmap.svg", "w", encoding="utf-8") as f:
+    f.write(svg)
+print("   Xem: preview_content.md, preview_mindmap.svg")

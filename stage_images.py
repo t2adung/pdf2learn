@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Stage 4 (v5): Hình minh hoạ.
+"""Stage 4 (v4): Hình minh hoạ.
 
 Hai nguồn ảnh ĐỘC LẬP, có thể bật/tắt riêng:
-1. Infographic "tổng hợp kiến thức" — dựng HTML/CSS THUẦN CODE từ Learning
-   Object (xem infographic_html.py), rồi chụp thành PNG bằng headless
-   Chromium (xem html_render.py). 0 token AI, deterministic, KHÔNG BAO GIỜ
-   sai chính tả (chữ là text HTML thật). Mặc định BẬT — đây là ảnh chính
-   của topic. Dependency Playwright là TUỲ CHỌN: chưa cài thì tự bỏ qua ảnh
-   này (cảnh báo 1 lần), không sập pipeline.
-   (v4 từng gọi model sinh ảnh — bị lỗi chính tả tiếng Việt trong ảnh, đã
-   revert. Trước nữa là vẽ SVG tay — bố cục đúng nhưng phải tự tính word-
-   wrap; HTML/CSS để trình duyệt lo việc đó, đỡ code hơn hẳn.)
+1. Sơ đồ tư duy ("mindmap") — dựng SVG THUẦN CODE từ field `mindmap` của
+   Learning Object (xem mindmap_svg.py). 0 token AI, 0 dependency ngoài,
+   deterministic, KHÔNG BAO GIỜ lỗi cú pháp (SVG do code sinh, không phải AI).
+   Mặc định BẬT — đây là ảnh chính của topic. Ghi ra file .svg trong images/.
+   (v4 quay lại mindmap SVG. v3 từng dựng infographic HTML/CSS rồi chụp PNG
+   bằng headless Chromium — nay bibeli tự lo phần hiển thị sinh động bằng HTML
+   nên pipeline không cần dựng HTML/PNG nữa, bỏ luôn dependency Playwright.)
 2. Ảnh gốc trích từ trang PDF (PyMuPDF) -> AI vision lọc bỏ logo/trang trí,
    giữ ảnh có giá trị minh hoạ. Chỉ chạy khi bật --book-images (mặc định TẮT,
    tốn thêm 1 request img_filter/topic).
@@ -19,7 +17,7 @@ Naming convention (deterministic, sinh bằng code): {topic_slug}_{nn}.{ext}
 """
 import fitz
 
-from infographic_html import render as render_infographic_html
+from mindmap_svg import to_svg, _validate
 from utils import log, warn
 
 MIN_DIM = 160          # bỏ ảnh quá nhỏ (icon, bullet trang trí)
@@ -54,7 +52,7 @@ def _extract_candidates(doc: fitz.Document, page_start: int, page_end: int) -> l
 
     Bỏ ảnh chiếm gần trọn trang (MAX_PAGE_COVERAGE): sách scan thường nhúng
     CẢ TRANG như 1 ảnh duy nhất -> đó là ảnh nền/scan, không phải minh hoạ,
-    lấy vào sẽ chiếm hết chỗ và không có giá trị trên infographic."""
+    lấy vào sẽ chiếm hết chỗ và không có giá trị."""
     seen, out = set(), []
     for pno in range(page_start - 1, page_end):
         page = doc[pno]
@@ -94,52 +92,44 @@ def _extract_candidates(doc: fitz.Document, page_start: int, page_end: int) -> l
     return out
 
 
-def _infographic(row: dict, content_entry: dict, renderer, images_dir):
-    """Dựng HTML (THUẦN CODE, 0 dependency) rồi chụp PNG bằng headless
-    Chromium NẾU renderer khả dụng. Trả về entry ảnh (PNG) hoặc None.
-
-    File .html LUÔN được ghi ra đĩa nếu có nội dung — kể cả khi chưa cài
-    Playwright (renderer=None) hoặc chụp PNG lỗi — để dùng thủ công/làm tư
-    liệu cho frontend nhúng HTML trực tiếp sau này. Chỉ phần PNG (dùng làm
-    "ảnh" cho topics.csv/manifest.json) mới cần renderer."""
-    try:
-        html = render_infographic_html(content_entry or {}, row["topic_title"])
-    except ValueError:
-        return None  # Learning Object rỗng (vd cache v1 cũ) -> không có gì để vẽ
+def _mindmap_svg(row: dict, content_entry: dict, images_dir):
+    """Vẽ sơ đồ tư duy từ field `mindmap` của Learning Object bằng code.
+    Trả về entry ảnh (.svg) hoặc None. 0 token, 0 dependency ngoài."""
+    mm = (content_entry or {}).get("mindmap")
+    if not mm:
+        return None
     slug = row["topic_slug"]
-    (images_dir / f"{slug}_infographic.html").write_text(html, encoding="utf-8")
-    if renderer is None:
-        return None
+    for w in _validate(mm):
+        warn(f"{slug}: {w}")
+        if w.startswith("mindmap: thiếu"):
+            return None
     try:
-        png = renderer.render_png(html)
+        svg = to_svg(mm, row["topic_title"])
     except Exception as e:
-        warn(f"{slug}: render PNG infographic lỗi ({e}) — vẫn giữ file .html.")
+        warn(f"{slug}: vẽ mindmap lỗi ({e}), topic không có ảnh mindmap.")
         return None
-    fname = f"{slug}_infographic.png"
-    (images_dir / fname).write_bytes(png)
-    return {"file": fname, "caption": f"Tổng hợp kiến thức: {row['topic_title']}",
-            "source": "code_infographic_html"}
+    fname = f"{slug}_mindmap.svg"
+    (images_dir / fname).write_text(svg, encoding="utf-8")
+    return {"file": fname, "caption": f"Sơ đồ tư duy: {row['topic_title']}",
+            "source": "code_mindmap"}
 
 
 def generate_images_one(doc, row: dict, content_entry: dict, client, images_dir,
-                        book_images: bool = False, infographic: bool = True,
-                        renderer=None) -> list:
+                        book_images: bool = False, mindmap: bool = True) -> list:
     """Sinh danh sách ảnh cho MỘT topic.
 
-    infographic=True (MẶC ĐỊNH): dựng + chụp 1 poster tổng hợp kiến thức từ
-      Learning Object bằng HTML/CSS (0 token, deterministic). renderer:
-      HtmlRenderer dùng chung cho cả lần chạy (xem main.py) — None (vd chưa
-      cài Playwright) thì tự bỏ qua ảnh này, không lỗi.
+    mindmap=True (MẶC ĐỊNH): vẽ 1 sơ đồ tư duy SVG từ Learning Object bằng code
+      (0 token, deterministic, 0 dependency). Đây là ảnh chính của topic.
     book_images=False (MẶC ĐỊNH): không trích + không gọi AI lọc ảnh trang
       sách -> tiết kiệm 1 request img_filter/topic.
     book_images=True: trích thêm ảnh gốc từ PDF + AI lọc, LIỆT KÊ RIÊNG."""
     images_dir.mkdir(parents=True, exist_ok=True)
     slug = row["topic_slug"]
     kept = []
-    if infographic:
-        info_entry = _infographic(row, content_entry, renderer, images_dir)
-        if info_entry:
-            kept.append(info_entry)
+    if mindmap:
+        mm_entry = _mindmap_svg(row, content_entry, images_dir)
+        if mm_entry:
+            kept.append(mm_entry)
     if not book_images:
         return kept
     cands = _extract_candidates(doc, row["page_start"], row["page_end"])

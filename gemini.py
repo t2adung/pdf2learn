@@ -253,6 +253,14 @@ class MockGemini(Gemini):
                      "points": ["Lý do thứ nhất (mock).",
                                 "Lý do thứ hai, gắn với đời sống."]},
                 ],
+                "mindmap": {
+                    "root": "Khái niệm X",
+                    "branches": [
+                        {"label": "X là gì", "children": ["Định nghĩa X", "Đặc điểm chính"]},
+                        {"label": "Công thức", "children": ["X = a * b", "a và b tỉ lệ thuận"]},
+                        {"label": "Vì sao quan trọng",
+                         "children": ["Ứng dụng đời sống", "Nền tảng bài sau"]},
+                    ]},
                 "real_life": ["Ví dụ đời sống minh hoạ khái niệm X (mock)."],
                 "memory_hooks": ["Nhớ X bằng ba chữ Đ: Đặc điểm - Định nghĩa - Đời sống."],
                 "misconceptions": [

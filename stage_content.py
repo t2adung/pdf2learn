@@ -1,19 +1,22 @@
 # -*- coding: utf-8 -*-
-"""Stage 3 (v3): Sinh nội dung bài học cho từng topic — dạng LEARNING OBJECT JSON.
+"""Stage 3 (v4): Sinh nội dung bài học cho từng topic — dạng LEARNING OBJECT JSON.
 
 Thay đổi cốt lõi so với v1:
 - v1: AI trả về 1 blob "content_markdown" => format do AI quyết, khó kiểm soát,
   muốn đổi layout phải sinh lại (tốn token).
 - v2: AI CHỈ trả về DỮ LIỆU CÓ CẤU TRÚC (objectives, key_terms, sections,
-  misconceptions...). Cú pháp Markdown do CODE sinh (render_markdown.py)
-  => 0 token cho khâu format, đổi layout chỉ cần re-render từ cache, không
-  gọi lại AI.
-- v3: bỏ "mindmap" (khó đọc trên giao diện text/markdown, sinh động không
-  bằng infographic thật). Thay bằng "concept_overview" (khối mở đầu kiểu
-  "Khái niệm trọng tâm" của tờ tóm tắt bài học) + "quick_review" (khối chốt
-  cuối bài kiểu "Ghi nhớ nhanh") + "formula" trong section (công thức tách
-  riêng biến số, không nhét vào point) — bám sát bố cục các tờ tổng hợp kiến
-  thức dạng infographic mà giáo viên hay tự làm tay.
+  mindmap, misconceptions...). Cú pháp Markdown/SVG do CODE sinh
+  (render_markdown.py + mindmap_svg.py) => 0 token cho khâu format, đổi layout
+  chỉ cần re-render từ cache, không gọi lại AI.
+- v3: thêm "concept_overview" (khối mở đầu kiểu "Khái niệm trọng tâm" của tờ
+  tóm tắt bài học) + "quick_review" (khối chốt cuối bài kiểu "Ghi nhớ nhanh")
+  + "formula" trong section (công thức tách riêng biến số, không nhét vào point)
+  — bám sát bố cục các tờ tổng hợp kiến thức mà giáo viên hay tự làm tay.
+- v4: đưa "mindmap" TRỞ LẠI (đã có ở v2). Ảnh minh hoạ chính của topic quay
+  về SƠ ĐỒ TƯ DUY vẽ bằng code (mindmap_svg.py -> file .svg, 0 token, 0
+  dependency) thay cho infographic HTML/PNG (bibeli nay tự lo phần hiển thị
+  sinh động bằng HTML nên pipeline không cần dựng HTML nữa). Giữ nguyên mọi
+  cải tiến văn phong + concept_overview/quick_review/formula của v3.
 
 Kỹ thuật chống hallucination (giữ nguyên từ v1):
 - Chỉ gửi đúng các trang của topic (cắt sub-PDF theo page range).
@@ -64,6 +67,21 @@ CONTENT_SCHEMA = {
             },
             "required": ["heading", "points"],
         }},
+        "mindmap": {
+            "type": "object",
+            "properties": {
+                "root": {"type": "string"},
+                "branches": {"type": "array", "items": {
+                    "type": "object",
+                    "properties": {
+                        "label": {"type": "string"},
+                        "children": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["label", "children"],
+                }},
+            },
+            "required": ["root", "branches"],
+        },
         "real_life": {"type": "array", "items": {"type": "string"}},
         "memory_hooks": {"type": "array", "items": {"type": "string"}},
         "misconceptions": {"type": "array", "items": {
@@ -77,7 +95,8 @@ CONTENT_SCHEMA = {
         "quick_review": {"type": "array", "items": {"type": "string"}},
         "key_points": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["concept_overview", "objectives", "sections", "quick_review", "key_points"],
+    "required": ["concept_overview", "objectives", "sections", "mindmap",
+                 "quick_review", "key_points"],
 }
 
 CONTENT_PROMPT = """Bạn là giáo viên giỏi VÀ giỏi trình bày, đang soạn một tờ tóm tắt bài học
@@ -112,6 +131,9 @@ NHÓM PHẢI BÁM SÁT TÀI LIỆU (tuyệt đối không bịa thêm số liệ
   - 2-4 points (mỗi point <= 20 từ), giải thích thuật ngữ khó gọn trong 1 point.
 - "key_terms": 2-5 thuật ngữ quan trọng. definition <= 20 từ; example ngắn,
   cụ thể, gắn đời sống học sinh.
+- "mindmap": sơ đồ tư duy tóm tắt bài (dùng vẽ ảnh SVG minh hoạ). root = tên
+  khái niệm trung tâm (ngắn), 3-5 branches, mỗi branch label <= 5 từ và 2-4
+  children (mỗi child <= 8 từ). Bám đúng nội dung bài, không bịa nhánh thừa.
 - "key_points": 6-15 ý kiến thức QUAN TRỌNG NHẤT (mỗi ý 1 câu hoàn chỉnh, độc
   lập, kiểm tra được — dùng sinh câu hỏi trắc nghiệm). Số lượng tỉ lệ lượng
   kiến thức thật: bài ngắn ít point, bài dài nhiều point. key_points KHÔNG bị

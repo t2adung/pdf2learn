@@ -1,22 +1,24 @@
 # pdf2learn — PDF → Learning Package (topics.csv + multichoice.csv)
 
 Pipeline AI: đọc PDF giáo trình (kể cả PDF **scan**) → chia module/topic → soạn bài
-học Markdown kèm hình minh hoạ → sinh câu hỏi trắc nghiệm phủ hết kiến thức →
-export đúng template import (`topics.csv`, `multichoice.csv`) + `images/` +
+học Markdown kèm ảnh **sơ đồ tư duy (mindmap)** → sinh câu hỏi trắc nghiệm phủ hết
+kiến thức → export đúng template import (`topics.csv`, `multichoice.csv`) + `images/` +
 `manifest.json`, kèm cross-model review, quality checks và báo cáo token.
 
 AI chính: **Google Gemini API free tier** (đọc PDF native, structured output).
 Reviewer (tuỳ chọn): Groq / OpenRouter / Gemini Pro.
 
+> **Nội dung** xuất ra Markdown (`.md`) — bibeli render bằng markdown-it/marked.
+> **Ảnh minh hoạ** là 1 sơ đồ tư duy `.svg` vẽ THUẦN CODE cho mỗi topic (0 token,
+> 0 dependency ngoài). Pipeline KHÔNG sinh file HTML — phần hiển thị sinh động do
+> bibeli tự dựng bằng HTML ở phía frontend.
+
 ## Yêu cầu
 
 - Python **3.9+** (khuyến nghị 3.12+)
-- `pip install -r requirements.txt` (pymupdf + requests)
+- `pip install -r requirements.txt` — chỉ 3 gói: pymupdf + requests + python-dotenv.
+  Ảnh mindmap vẽ bằng code (SVG), KHÔNG cần Playwright/Chromium hay dependency ngoài.
 - API key miễn phí: https://aistudio.google.com → `export GEMINI_API_KEY=AIza...`
-- Tuỳ chọn — muốn có ảnh infographic tổng hợp kiến thức (stage 4, 0 token AI,
-  vẽ bằng HTML/CSS + chụp qua headless Chromium):
-  `pip install playwright && playwright install chromium`. Không cài vẫn
-  chạy được toàn bộ pipeline, chỉ là topic không có ảnh infographic.
 
 ## Bắt đầu nhanh
 
@@ -46,7 +48,7 @@ python main.py sach.pdf --level "Lớp 6" --review
 output/
 ├── topics.csv        # snapshot TÍCH LUỸ đầy đủ — dùng cho lần import chính thức
 ├── multichoice.csv   #   (UTF-8 BOM, đúng cột template; ảnh tham chiếu bằng filename trần)
-├── images/           # TẤT CẢ ảnh: {topic_slug}_{nn}.png|jpg|svg — upload riêng vào hệ thống
+├── images/           # ảnh mindmap {topic_slug}_mindmap.svg (+ ảnh PDF nếu --book-images) — upload riêng
 ├── manifest.json     # bản đồ topic → ảnh → caption → nguồn + warnings + quality checks
 ├── review_report.md  # (nếu --review) báo cáo thẩm định — ĐỌC TRƯỚC KHI IMPORT
 ├── batch-01/         # DELTA: chỉ các topic hoàn chỉnh trong lần chạy 1
@@ -67,8 +69,8 @@ hết quota giữa chừng vẫn có N topic hoàn chỉnh, tự export partial 
 1. TOC        bookmark PDF (0 token) hoặc AI đọc PDF suy ra   → work/01_toc.json
 2. Structure  slug/order sinh bằng code (deterministic)       → work/02_structure.json
 ─ vòng lặp từng topic ─
-3. Content    Markdown bài học + key_points (AI, chunk trang) → work/03_content.json
-4. Images     HTML/CSS + Chromium vẽ infographic + trích ảnh PDF → work/04_images.json + output/images/
+3. Content    Markdown bài học + key_points + mindmap (AI, chunk) → work/03_content.json
+4. Images     vẽ mindmap SVG bằng code (0 token) [+ ảnh PDF nếu --book-images] → output/images/
 5. Questions  MCQ theo key_points (coverage) + validation     → work/05_questions.json
 6. Review     (--review) model thứ 2 thẩm định                → work/06_review.json
 ─ hết vòng lặp ─
@@ -79,30 +81,78 @@ hết quota giữa chừng vẫn có N topic hoàn chỉnh, tự export partial 
 qua, topic dở dang chạy tiếp đúng bước thiếu. Gặp lỗi hết quota ngày: tool báo
 rõ, export partial rồi thoát — quota reset ~14-15h chiều giờ VN.
 
-## Toàn bộ options
+## Câu lệnh đầy đủ (mọi option)
 
-| Flag | Ý nghĩa |
-|---|---|
-| `--level "Lớp 6"` | Giá trị cột `level` (mặc định "Lớp 6") |
-| `--dry-run` | MockGemini, không cần API key — kiểm tra pipeline & format output |
-| `--limit N` | Chỉ xử lý N topic đầu tiên rồi export — test chất lượng/format với AI thật mà không tốn token cả sách. Bỏ cờ ở lần chạy sau để resume phần còn lại |
-| `--no-images` | Bỏ stage ảnh hoàn toàn (khỏi cần cài Playwright), lấy ảnh sau bằng cách chạy lại bỏ cờ này |
-| `--no-infographic` | Tắt vẽ ảnh infographic tổng hợp kiến thức (HTML/CSS + Chromium, 0 token). Mặc định BẬT — tự bỏ qua (cảnh báo, không lỗi) nếu chưa cài Playwright |
-| `--book-images` | Trích thêm ảnh gốc từ trang PDF + AI lọc (+1 request/topic), liệt kê riêng, không ghép vào infographic |
-| `--redo-images` | Chỉ xoá cache + thư mục ảnh (stage 4) rồi sinh lại — giữ nguyên content/câu hỏi đã có |
-| `--redo-content` | Chỉ xoá cache content (stage 3) rồi sinh lại — giữ nguyên câu hỏi/ảnh đã có. Dùng thay `--redo-from 3` khi câu hỏi cũ vẫn dùng được (lưu ý: có thể lệch coverage nếu nội dung mới đổi nhiều) |
-| `--no-validate` | Bỏ pass tự giải kiểm chứng đáp án (không khuyến nghị) |
-| `--review` | Bật stage 6: model thứ hai thẩm định content + câu hỏi |
-| `--reviewer X` | `groq` (Llama 70B, độc lập nhà cung cấp — mặc định) / `openrouter` (DeepSeek R1) / `gemini-pro` (duy nhất đối chiếu được PDF gốc) |
-| `--review-fix` | Tự loại câu hỏi bị review đánh `severity=high` (mặc định chỉ báo cáo) |
-| `--redo-from N` | Xoá cache stage N→7 rồi sinh lại (vd `5`: sinh lại câu hỏi; ≤5 reset đánh số batch) |
-| `--force-ai-toc` | Bỏ qua bookmark PDF, luôn dùng AI trích mục lục |
-| `--dpi N` | Nén trang scan độ phân giải CAO về N dpi gray (có guard chống upscale — scan đã nhỏ thì tự giữ nguyên) |
-| `--model` | Mặc định `gemini-2.5-flash` |
-| `--interval` | Giây giữa 2 request (mặc định 6 ≈ 10 RPM free tier) |
+Cú pháp: `python main.py <file.pdf> [options]`. Chỉ `<file.pdf>` là bắt buộc;
+mọi option đều có mặc định hợp lý (chạy trơn chỉ với `--level`). Bản tham chiếu
+đầy đủ — copy về rồi bỏ bớt cờ không cần:
 
-Biến môi trường: `GEMINI_API_KEY` (bắt buộc trừ dry-run), `GROQ_API_KEY` /
-`OPENROUTER_API_KEY` (theo reviewer).
+```bash
+python main.py sach.pdf \
+  --level "Lớp 6" \            # giá trị cột level (mặc định "Lớp 6")
+  --subject "Khoa học tự nhiên" \  # tên môn, chỉ ghi vào JSON (--export-json / --content-format json)
+  --grade 6 \                 # khối lớp ghi vào JSON (mặc định tự rút số từ --level)
+  --density full \            # mật độ chữ cột content: full | compact | minimal (0 token, chỉ re-render)
+  --content-format markdown \ # cột content: markdown (mặc định) | json (Learning Object thô, nhúng quiz)
+  --export-json \             # ghi thêm output/json/{slug}.json theo format đích (0 token)
+  --model gemini-2.5-flash \  # model Gemini (mặc định gemini-2.5-flash)
+  --interval 6 \              # giây giữa 2 request (free tier ~10 RPM -> 6s)
+  --dpi 0 \                   # nén trang scan HD về N dpi gray trước khi gửi (0=tắt; scan nên 110)
+  --limit 0 \                 # chỉ xử lý N topic đầu rồi export (0=cả sách); test nhanh trước khi chạy full
+  --no-images \               # bỏ hẳn stage 4 (không ảnh nào)
+  --no-mindmap \              # bật stage 4 nhưng KHÔNG vẽ mindmap (chỉ có ý nghĩa khi kèm --book-images)
+  --book-images \             # trích THÊM ảnh gốc từ PDF + AI lọc (+1 request/topic)
+  --no-validate \             # bỏ pass tự giải kiểm chứng đáp án (không khuyến nghị)
+  --fused \                   # sinh content + câu hỏi trong 1 request/topic (~50% request, xem trade-off)
+  --review \                  # bật stage 6: model thứ 2 thẩm định content + câu hỏi
+  --reviewer groq \           # groq (Llama 70B, mặc định) | openrouter (DeepSeek R1) | gemini-pro (đọc được PDF)
+  --review-fix \              # tự loại câu hỏi bị review đánh severity=high (mặc định chỉ báo cáo)
+  --force-ai-toc \            # bỏ qua bookmark PDF, luôn dùng AI trích mục lục
+  --toc-file work/01_toc.json \ # dùng file TOC dựng sẵn (build_toc.py / toc_from_images.py) — 0 token
+  --yes \                     # bỏ bước xác nhận mục lục trước khi gọi AI (CI/Colab)
+  --dry-run                   # MockGemini, không cần API key — test pipeline & format output
+```
+
+Các cờ "sinh lại" (không đổi số liệu, chỉ xoá cache có chọn lọc rồi chạy lại):
+
+```bash
+python main.py sach.pdf --redo-content   # chỉ sinh lại content (stage 3), giữ ảnh/câu hỏi
+python main.py sach.pdf --redo-images    # chỉ sinh lại ảnh (stage 4), giữ content/câu hỏi
+python main.py sach.pdf --redo-from 5    # xoá cache stage 5→7 rồi sinh lại (vd sinh lại câu hỏi)
+```
+
+## Bảng tra nhanh options
+
+| Flag | Mặc định | Ý nghĩa |
+|---|---|---|
+| `--level "Lớp 6"` | `"Lớp 6"` | Giá trị cột `level` |
+| `--subject X` | `""` | Tên môn học, chỉ ghi vào JSON bài học |
+| `--grade N` | tự rút từ `--level` | Khối lớp ghi vào JSON (`"Lớp 6"` → `6`) |
+| `--density X` | `full` | Mật độ chữ cột content: `full` \| `compact` (3 point/mục) \| `minimal` (rút gọn). Đổi mức 0 token — chỉ re-render |
+| `--content-format X` | `markdown` | Cột content: `markdown` (render bằng code) \| `json` (Learning Object thô, nhúng quiz) |
+| `--export-json` | tắt | Ghi thêm `output/json/{slug}.json` theo format đích (0 token) |
+| `--dry-run` | tắt | MockGemini, không cần API key — kiểm tra pipeline & format |
+| `--limit N` | `0` (cả sách) | Chỉ xử lý N topic đầu rồi export — test chất lượng/format với AI thật; bỏ cờ ở lần sau để resume |
+| `--no-images` | tắt | Bỏ stage ảnh hoàn toàn; lấy ảnh sau bằng cách chạy lại bỏ cờ này |
+| `--no-mindmap` | tắt (mindmap BẬT) | Không vẽ mindmap SVG. Ảnh chính của topic là mindmap (vẽ bằng code, 0 token, 0 dependency) nên chỉ nên dùng cờ này khi đã có `--book-images` |
+| `--book-images` | tắt | Trích THÊM ảnh gốc từ trang PDF + AI lọc (+1 request/topic), liệt kê riêng, tách khỏi mindmap |
+| `--redo-images` | tắt | Chỉ xoá cache + thư mục ảnh (stage 4) rồi sinh lại — giữ nguyên content/câu hỏi |
+| `--redo-content` | tắt | Chỉ xoá cache content (stage 3) rồi sinh lại — giữ nguyên câu hỏi/ảnh. Dùng thay `--redo-from 3` khi câu hỏi cũ vẫn dùng được (có thể lệch coverage nếu content đổi nhiều) |
+| `--redo-from N` | `99` (tắt) | Xoá cache stage N→7 rồi sinh lại (vd `5`: sinh lại câu hỏi; ≤5 reset đánh số batch) |
+| `--no-validate` | tắt | Bỏ pass tự giải kiểm chứng đáp án (không khuyến nghị) |
+| `--fused` | tắt | Sinh content + câu hỏi trong 1 request/topic (~50% request stage 3+5) |
+| `--review` | tắt | Bật stage 6: model thứ hai thẩm định content + câu hỏi |
+| `--reviewer X` | `groq` | `groq` (Llama 70B, độc lập nhà cung cấp) \| `openrouter` (DeepSeek R1) \| `gemini-pro` (duy nhất đối chiếu được PDF gốc) |
+| `--review-fix` | tắt | Tự loại câu hỏi bị review đánh `severity=high` (mặc định chỉ báo cáo) |
+| `--force-ai-toc` | tắt | Bỏ qua bookmark PDF, luôn dùng AI trích mục lục |
+| `--toc-file F` | — | Dùng file `01_toc.json` dựng sẵn (build_toc.py / toc_from_images.py) — 0 token, chính xác 100% |
+| `--yes` | tắt | Bỏ bước xác nhận mục lục trước khi gọi AI (dùng cho CI/Colab không có TTY) |
+| `--dpi N` | `0` (tắt) | Nén trang scan độ phân giải CAO về N dpi gray (có guard chống upscale) |
+| `--model X` | `gemini-2.5-flash` | Model Gemini |
+| `--interval S` | `6` | Giây giữa 2 request (≈ 10 RPM free tier) |
+
+Biến môi trường: `GEMINI_API_KEY` (bắt buộc trừ `--dry-run`), `GROQ_API_KEY` /
+`OPENROUTER_API_KEY` (theo `--reviewer`).
 
 ## Báo cáo token (luôn bật)
 
