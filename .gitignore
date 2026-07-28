@@ -1,0 +1,6 @@
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Pipeline output (sinh lại được, không commit)
+runs/
