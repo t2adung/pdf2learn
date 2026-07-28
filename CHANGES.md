@@ -1,5 +1,16 @@
 # pdf2learn v2 — Content chuyển từ Markdown blob sang Learning Object JSON
 
+## Cập nhật schema bài học (mới nhất)
+
+- **Thêm mục cuối `✅ Trả lời câu hỏi khởi động`** (field `hook_answer`): chốt
+  bài bằng câu trả lời cho chính câu hỏi khởi động (`hook`) ở đầu bài. LUÔN là
+  mục cuối cùng trong cột `content`.
+- **Bỏ `💡 Mẹo nhớ` (`memory_hooks`) và `⚠️ Dễ nhầm lẫn` (`misconceptions`)**,
+  thay bằng **`📊 Bảng so sánh ghi nhớ`** (field `comparison` = `{items, rows}`):
+  bảng so sánh các phần/khái niệm trong bài — giống nhau, khác nhau ở đâu.
+- **`--limit N`**: chỉ xử lý N bài đầu rồi export CSV luôn (test nhanh bài 1-2).
+- Đổi schema ⇒ cache `03_content.json` cũ hết hợp lệ, chạy lại với `--redo-from 3`.
+
 ## Cài đặt lần đầu (macOS / Linux)
 
 Yêu cầu Python 3.9+ (khuyến nghị 3.12). Kiểm tra: `python3 --version`.

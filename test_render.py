@@ -41,10 +41,15 @@ LO = {
              "children": ["Hiểu nguồn gốc", "Hiểu hiện tại", "Định hướng tương lai"]},
         ]},
     "real_life": ["Album ảnh cũ của ông bà ghi lại lịch sử của gia đình em."],
-    "memory_hooks": ["Lịch sử = ĐÃ + XẢY RA. Đã xảy ra rồi thì là lịch sử, dù mới hôm qua."],
-    "misconceptions": [
-        {"wrong": "Lịch sử chỉ là chuyện vua chúa, chiến tranh.",
-         "correct": "Lịch sử là mọi thứ đã xảy ra, kể cả việc em học lớp 5 năm ngoái."}],
+    "comparison": {
+        "items": ["Ngày xưa", "Bây giờ"],
+        "rows": [
+            # BẪY: dấu | trong ô để kiểm tra _cell() thoát đúng
+            {"aspect": "Thời gian", "values": ["Đã | trôi qua", "Đang diễn ra"]},
+            {"aspect": "Thay đổi được?", "values": ["Không", "Có"]},
+        ],
+    },
+    "hook_answer": "Vì công nghệ thay đổi liên tục — đó chính là lịch sử của chiếc điện thoại.",
     "key_points": ["Lịch sử là tất cả những gì đã xảy ra trong quá khứ."],
 }
 
@@ -76,6 +81,21 @@ check("có heading Mục tiêu", "## 🎯 Mục tiêu" in md)
 check("hook nằm trong blockquote", "\n> Chiếc điện thoại" in md)
 check("ảnh tham chiếu filename trần", "![Sơ đồ tư duy](ls-bai-1_01.svg)" in md)
 
+# BẢNG SO SÁNH GHI NHỚ: có heading + đủ cột (Tiêu chí + 2 item = 3 cột)
+check("có heading Bảng so sánh ghi nhớ", "## 📊 Bảng so sánh ghi nhớ" in md)
+crow = [l for l in md.splitlines() if l.startswith("| Tiêu chí")]
+check("hàng tiêu đề bảng so sánh đúng 3 cột",
+      len(crow) == 1 and crow[0].count("|") == 4, str(crow))
+check("dấu | trong ô bảng so sánh được escape", "Đã \\| trôi qua" in md)
+
+# TRẢ LỜI CÂU HỎI KHỞI ĐỘNG: LUÔN là mục cuối cùng
+check("có heading Trả lời câu hỏi khởi động", "## ✅ Trả lời câu hỏi khởi động" in md)
+heads = [l for l in md.splitlines() if l.startswith("## ")]
+check("Trả lời câu hỏi khởi động là mục CUỐI CÙNG",
+      heads and heads[-1] == "## ✅ Trả lời câu hỏi khởi động", str(heads[-1:]))
+check("KHÔNG còn mục Dễ nhầm lẫn / Mẹo nhớ",
+      "Dễ nhầm lẫn" not in md and "Mẹo nhớ" not in md)
+
 # BẪY: bảng markdown phải còn đúng 3 cột
 tbl = [l for l in md.splitlines() if l.startswith("|") and "Quá khứ" in l]
 check("dòng bảng có dấu | được escape", len(tbl) == 1 and tbl[0].count("\\|") == 2, str(tbl))
@@ -95,7 +115,8 @@ check("markdown sống sót round-trip CSV", back == md)
 
 # --- 4. bản không dùng bảng (nếu bibeli tắt table) ---
 md2 = render(LO, use_tables=False)
-check("use_tables=False không sinh bảng", "| --- |" not in md2 and "❌" in md2)
+check("use_tables=False không sinh bảng",
+      "| --- |" not in md2 and "## 📊 Bảng so sánh ghi nhớ" in md2 and "Thời gian" in md2)
 
 print()
 if fails:

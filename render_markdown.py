@@ -32,9 +32,9 @@ H_HOOK = "## 🤔 Câu hỏi khởi động"
 H_TERMS = "## 🔑 Từ khoá cần nhớ"
 H_MAIN = "## 📚 Nội dung chính"
 H_REAL = "## 🌍 Liên hệ thực tế"
-H_MISC = "## ⚠️ Dễ nhầm lẫn"
-H_HOOKS = "## 💡 Mẹo nhớ"
+H_COMPARE = "## 📊 Bảng so sánh ghi nhớ"
 H_IMAGES = "## 🖼️ Hình minh hoạ"
+H_HOOK_ANSWER = "## ✅ Trả lời câu hỏi khởi động"
 
 
 def _cell(s: str) -> str:
@@ -81,14 +81,14 @@ def _trim(s: str, max_words: int) -> str:
 #   compact : mỗi section tối đa 3 point, point dài cắt còn 22 từ; bỏ ví dụ ở
 #             key_terms; giữ đủ section
 #   minimal : chỉ Mục tiêu + Nội dung chính (2 point/section, 18 từ) + Mindmap.
-#             Các phần Liên hệ/Dễ nhầm/Mẹo nhớ ẩn đi (đọc nhanh, ôn tập)
+#             Các phần Liên hệ/Bảng so sánh/Trả lời khởi động ẩn đi (đọc nhanh, ôn tập)
 DENSITY = {
     "full":    {"max_points": 0, "max_words": 0,  "term_example": True,
                 "keep": {"objectives", "hook", "key_terms", "sections",
-                         "real_life", "misconceptions", "memory_hooks", "images"}},
+                         "real_life", "comparison", "images", "hook_answer"}},
     "compact": {"max_points": 3, "max_words": 22, "term_example": False,
                 "keep": {"objectives", "hook", "key_terms", "sections",
-                         "real_life", "misconceptions", "memory_hooks", "images"}},
+                         "real_life", "comparison", "images", "hook_answer"}},
     "minimal": {"max_points": 2, "max_words": 18, "term_example": False,
                 "keep": {"objectives", "sections", "images"}},
 }
@@ -155,22 +155,25 @@ def render(lo: dict, images: list = None, use_tables: bool = True,
         p += _bullets(_cap(lo["real_life"]), mw)
         p.append("")
 
-    if lo.get("misconceptions") and "misconceptions" in keep:
-        p.append(H_MISC)
+    comp = lo.get("comparison") or {}
+    comp_items = [i for i in (comp.get("items") or []) if str(i).strip()]
+    comp_rows = comp.get("rows") or []
+    if comp_items and comp_rows and "comparison" in keep:
+        p.append(H_COMPARE)
+        n = len(comp_items)
         if use_tables:
-            p.append("| Nhiều bạn nghĩ | Thực ra |")
-            p.append("| --- | --- |")
-            for m in _cap(lo["misconceptions"]):
-                p.append(f"| {_cell(m.get('wrong',''))} | {_cell(m.get('correct',''))} |")
+            p.append("| Tiêu chí | " + " | ".join(_cell(i) for i in comp_items) + " |")
+            p.append("| --- | " + " | ".join("---" for _ in comp_items) + " |")
+            for r in _cap(comp_rows):
+                vals = (list(r.get("values") or []) + [""] * n)[:n]
+                p.append("| " + _cell(r.get("aspect", "")) + " | "
+                         + " | ".join(_cell(v) for v in vals) + " |")
         else:
-            for m in _cap(lo["misconceptions"]):
-                p.append(f"- ❌ {_line(m.get('wrong',''))}")
-                p.append(f"  - ✅ {_line(m.get('correct',''))}")
-        p.append("")
-
-    if lo.get("memory_hooks") and "memory_hooks" in keep:
-        p.append(H_HOOKS)
-        p += _bullets(_cap(lo["memory_hooks"]), mw)
+            for r in _cap(comp_rows):
+                vals = (list(r.get("values") or []) + [""] * n)[:n]
+                p.append(f"- **{_line(r.get('aspect',''))}**")
+                for it, v in zip(comp_items, vals):
+                    p.append(f"  - {_line(it)}: {_line(v)}")
         p.append("")
 
     if images and "images" in keep:
@@ -178,6 +181,12 @@ def render(lo: dict, images: list = None, use_tables: bool = True,
         for img in images:
             cap = _line(img.get("caption", "")).replace("]", ")")
             p.append(f"![{cap}]({img['file']})")
+        p.append("")
+
+    # LUÔN là mục CUỐI CÙNG: chốt bài bằng câu trả lời cho hook đầu bài.
+    if lo.get("hook_answer") and "hook_answer" in keep:
+        p.append(H_HOOK_ANSWER)
+        p.append(f"> {_line(lo['hook_answer'])}")
         p.append("")
 
     # gộp dòng trống thừa

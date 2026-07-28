@@ -75,6 +75,7 @@ rõ, export partial rồi thoát — quota reset ~14-15h chiều giờ VN.
 | Flag | Ý nghĩa |
 |---|---|
 | `--level "Lớp 6"` | Giá trị cột `level` (mặc định "Lớp 6") |
+| `--limit N` | CHỈ xử lý N bài ĐẦU rồi export CSV luôn (vd `--limit 2` để test nhanh bài 1-2). 0 = làm hết. Cache giữ nguyên: bỏ cờ này chạy lại sẽ làm tiếp phần còn lại |
 | `--dry-run` | MockGemini, không cần API key — kiểm tra pipeline & format output |
 | `--no-images` | Bỏ stage ảnh: −1..2 request/topic (~30%), lấy ảnh sau bằng cách chạy lại bỏ cờ này |
 | `--no-validate` | Bỏ pass tự giải kiểm chứng đáp án (không khuyến nghị) |

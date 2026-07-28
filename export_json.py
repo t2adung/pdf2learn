@@ -9,8 +9,9 @@ Format đích (theo mẫu lich_su_la_gi_learning_object.json):
   "key_terms":      [{term, definition, example}],
   "sections":       [{heading, icon_hint, points}],
   "mindmap_mermaid": "mindmap\\n  root((...))\\n    ...",   # code sinh từ cây
-  "real_life", "memory_hooks",
-  "misconceptions": [{wrong, correct}],
+  "real_life",
+  "comparison":     {items:[...], rows:[{aspect, values:[...]}]},
+  "hook_answer",                                            # trả lời cho "hook"
   "quiz": [{question, options[4], answer_index, explanation, bloom, difficulty}]
 }
 
@@ -79,8 +80,8 @@ def compose_learning_object(row: dict, lo: dict, questions: list,
             "points": s.get("points", []),
         } for s in lo.get("sections", [])],
         "real_life": lo.get("real_life", []),
-        "memory_hooks": lo.get("memory_hooks", []),
-        "misconceptions": lo.get("misconceptions", []),
+        "comparison": lo.get("comparison", {"items": [], "rows": []}),
+        "hook_answer": lo.get("hook_answer", ""),
     }
     mm = lo.get("mindmap")
     if mm and mm.get("root"):

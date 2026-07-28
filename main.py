@@ -31,13 +31,19 @@ from utils import load_json, log, save_json, warn
 
 # Phiên bản shape của 03_content.json. v2 = Learning Object JSON
 # (objectives/sections/mindmap/...) thay cho blob content_markdown (v1).
-CONTENT_VERSION = 2
+# v3 = bỏ memory_hooks/misconceptions, thêm comparison + hook_answer.
+CONTENT_VERSION = 3
 
 
 def main():
     ap = argparse.ArgumentParser(description="PDF -> learning package (topics + MCQ)")
     ap.add_argument("pdf", type=Path, help="đường dẫn file PDF")
     ap.add_argument("--level", default="Lớp 6", help='giá trị cột level, vd "Lớp 6"')
+    ap.add_argument("--limit", type=int, default=0, metavar="N",
+                    help="CHỈ xử lý N topic (bài) ĐẦU TIÊN rồi export CSV luôn — "
+                         "test nhanh chất lượng bài 1,2 trước khi chạy cả sách "
+                         "(vd --limit 2). 0 = làm hết. Cache giữ nguyên nên chạy "
+                         "lại bỏ cờ này sẽ làm tiếp các topic còn lại.")
     ap.add_argument("--model", default="gemini-2.5-flash")
     ap.add_argument("--density", default="full",
                     choices=["full", "compact", "minimal"],
@@ -198,6 +204,14 @@ def main():
 
     if not structure:
         sys.exit("Không xác định được topic nào — kiểm tra lại PDF/mục lục.")
+
+    # ---- --limit N: chỉ xử lý + export N topic đầu (test nhanh bài 1,2) ----
+    # Cắt structure ở đây => mọi stage sau (content/images/questions/export) đều
+    # chỉ thấy N topic này. Cache của chúng vẫn dùng lại được khi chạy full sau.
+    if args.limit and args.limit > 0 and args.limit < len(structure):
+        log(f"── --limit {args.limit}: chỉ xử lý {args.limit}/{len(structure)} "
+            f"topic đầu tiên rồi export CSV (test nhanh) ──")
+        structure = structure[:args.limit]
 
     # ---- Guard 0 token: xác nhận mục lục TRƯỚC khi đốt quota AI ----
     # Mục lục sai (offset lệch, AI đoán nhầm) là lỗi đắt nhất: mọi stage sau
