@@ -6,8 +6,7 @@ import csv
 import io
 import sys
 
-from mindmap_svg import to_mermaid, to_svg, _validate
-from render_markdown import render
+from render_markdown import H_ANSWER, H_COMPARE, H_VIDEO, render
 
 LO = {
     "objectives": ["Nêu được khái niệm lịch sử và môn Lịch sử.",
@@ -28,23 +27,18 @@ LO = {
          "points": ["Hiểu nguồn gốc của mọi sự vật.",
                     "Rút kinh nghiệm để định hướng tương lai."]},
     ],
-    "mindmap": {
-        "root": "Lịch sử là gì",
-        "branches": [
-            {"label": "Sự biến đổi",
-             "children": ["Mọi vật thay đổi theo thời gian", "Con người và xã hội cũng vậy"]},
-            {"label": "Lịch sử",
-             "children": ["Tất cả những gì đã xảy ra", "Khoa học phục dựng quá khứ"]},
-            {"label": "Môn Lịch sử",
-             "children": ["Tìm hiểu xã hội loài người", "Từ khi có con người đến nay"]},
-            {"label": "Vì sao cần học",
-             "children": ["Hiểu nguồn gốc", "Hiểu hiện tại", "Định hướng tương lai"]},
+    "comparison": {
+        "title": "So sánh Lịch sử và môn Lịch sử",
+        "headers": ["Tiêu chí", "Lịch sử", "Môn Lịch sử"],
+        "rows": [
+            ["Là gì", "Những gì đã xảy ra", "Khoa học nghiên cứu quá khứ"],
+            # BẪY: ô chứa dấu | và số ô THIẾU so với headers -> phải escape + đệm
+            ["Ví dụ | minh hoạ", "Ảnh cũ của gia đình"],
         ]},
     "real_life": ["Album ảnh cũ của ông bà ghi lại lịch sử của gia đình em."],
-    "memory_hooks": ["Lịch sử = ĐÃ + XẢY RA. Đã xảy ra rồi thì là lịch sử, dù mới hôm qua."],
-    "misconceptions": [
-        {"wrong": "Lịch sử chỉ là chuyện vua chúa, chiến tranh.",
-         "correct": "Lịch sử là mọi thứ đã xảy ra, kể cả việc em học lớp 5 năm ngoái."}],
+    "hook_answer": "Vì công nghệ luôn thay đổi theo thời gian — đó chính là lịch sử.",
+    "video_query": "lịch sử là gì lớp 6 bài giảng",
+    "video_url": "https://www.youtube.com/results?search_query=l%E1%BB%8Bch+s%E1%BB%AD",
     "key_points": ["Lịch sử là tất cả những gì đã xảy ra trong quá khứ."],
 }
 
@@ -57,26 +51,37 @@ def check(name, cond, detail=""):
         fails.append(name)
 
 
-# --- 1. mindmap ---
-check("mindmap hợp lệ", _validate(LO["mindmap"]) == [], str(_validate(LO["mindmap"])))
-svg = to_svg(LO["mindmap"], "Lịch sử là gì?")
-check("SVG mở/đóng đúng", svg.startswith("<svg") and svg.rstrip().endswith("</svg>"))
-check("SVG giữ dấu tiếng Việt", "Định hướng tương lai" in svg)
-check("SVG escape XML", "&amp;" in to_svg({"root": "A & B", "branches": LO["mindmap"]["branches"]}))
-
-mer = to_mermaid(LO["mindmap"])
-check("mermaid bắt đầu đúng", mer.startswith("mindmap\n  root(("))
-check("mermaid không còn ký tự phá cú pháp",
-      not any(c in ln for ln in mer.splitlines()[2:] for c in "(),:;"))
-
-# --- 2. markdown ---
-md = render(LO, images=[{"file": "ls-bai-1_01.svg", "caption": "Sơ đồ tư duy"}])
+# --- 1. markdown ---
+md = render(LO, images=[{"file": "ls-bai-1_01.png", "caption": "Ảnh minh hoạ"}])
 check("KHÔNG có fence mermaid (bibeli dùng markdown-it thuần)", "```mermaid" not in md)
 check("có heading Mục tiêu", "## 🎯 Mục tiêu" in md)
 check("hook nằm trong blockquote", "\n> Chiếc điện thoại" in md)
-check("ảnh tham chiếu filename trần", "![Sơ đồ tư duy](ls-bai-1_01.svg)" in md)
+check("ảnh tham chiếu filename trần", "![Ảnh minh hoạ](ls-bai-1_01.png)" in md)
+check("KHÔNG còn mục Mẹo nhớ", "Mẹo nhớ" not in md)
+check("KHÔNG còn mục Dễ nhầm lẫn", "Dễ nhầm" not in md)
 
-# BẪY: bảng markdown phải còn đúng 3 cột
+# --- 2. bảng so sánh (thay cho mindmap cũ) ---
+check("có heading Bảng so sánh", H_COMPARE in md)
+check("bảng so sánh có tiêu đề cột", "| Tiêu chí | Lịch sử | Môn Lịch sử |" in md)
+crow = [l for l in md.splitlines() if l.startswith("|") and "minh hoạ" in l]
+check("ô so sánh có dấu | được escape", len(crow) == 1 and crow[0].count("\\|") == 1, str(crow))
+# hàng thiếu ô phải được đệm cho đủ 3 cột: đúng 4 thanh | (không tính escape)
+check("hàng so sánh thiếu ô vẫn đủ 3 cột",
+      crow and crow[0].replace("\\|", "").count("|") == 4,
+      f"{crow[0].replace(chr(92)+'|','').count('|') if crow else 0} thanh dọc")
+
+# --- 3. câu trả lời khởi động là MỤC CUỐI CÙNG ---
+check("có heading Trả lời câu hỏi khởi động", H_ANSWER in md)
+check("hook_answer nằm CUỐI content",
+      md.rstrip().rfind(H_ANSWER) > md.rfind(H_COMPARE), "phải sau bảng so sánh")
+check("nội dung sau H_ANSWER chính là câu trả lời",
+      "Vì công nghệ luôn thay đổi" in md.split(H_ANSWER, 1)[1])
+
+# --- 4. video bài giảng ---
+check("có heading Video bài giảng", H_VIDEO in md)
+check("link YouTube trỏ đúng URL", "(https://www.youtube.com/results?search_query=" in md)
+
+# BẪY: bảng key_terms phải còn đúng 3 cột
 tbl = [l for l in md.splitlines() if l.startswith("|") and "Quá khứ" in l]
 check("dòng bảng có dấu | được escape", len(tbl) == 1 and tbl[0].count("\\|") == 2, str(tbl))
 # đếm cột thật = số '|' không bị escape
@@ -84,7 +89,7 @@ raw = tbl[0].replace("\\|", "")
 check("dòng bảng vẫn đúng 3 cột", raw.count("|") == 4, f"{raw.count('|')} thanh dọc")
 check("xuống dòng trong ô đã bị làm phẳng", "Mốc chia theo thời gian" in md)
 
-# --- 3. sống sót qua CSV round-trip ---
+# --- 5. sống sót qua CSV round-trip ---
 buf = io.StringIO()
 w = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
 w.writerow(["topic_slug", "content"])
@@ -93,9 +98,11 @@ buf.seek(0)
 back = list(csv.reader(buf))[1][1]
 check("markdown sống sót round-trip CSV", back == md)
 
-# --- 4. bản không dùng bảng (nếu bibeli tắt table) ---
+# --- 6. bản không dùng bảng (nếu bibeli tắt table) ---
 md2 = render(LO, use_tables=False)
-check("use_tables=False không sinh bảng", "| --- |" not in md2 and "❌" in md2)
+check("use_tables=False không sinh bảng", "| --- |" not in md2)
+check("use_tables=False: key_terms đổ sang danh sách", "- **Lịch sử**" in md2)
+check("use_tables=False: bảng so sánh đổ sang danh sách", H_COMPARE in md2 and "- **Là gì**" in md2)
 
 print()
 if fails:
@@ -104,6 +111,4 @@ if fails:
 print("✅ Tất cả check đã qua. 0 token đã dùng.")
 with open("preview_content.md", "w", encoding="utf-8") as f:
     f.write(md)
-with open("preview_mindmap.svg", "w", encoding="utf-8") as f:
-    f.write(svg)
-print("   Xem: preview_content.md, preview_mindmap.svg")
+print("   Xem: preview_content.md")

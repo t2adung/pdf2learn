@@ -8,9 +8,10 @@ Format đích (theo mẫu lich_su_la_gi_learning_object.json):
   "objectives", "hook",
   "key_terms":      [{term, definition, example}],
   "sections":       [{heading, icon_hint, points}],
-  "mindmap_mermaid": "mindmap\\n  root((...))\\n    ...",   # code sinh từ cây
-  "real_life", "memory_hooks",
-  "misconceptions": [{wrong, correct}],
+  "comparison":     {title, headers[], rows[[]]},         # bảng so sánh ghi nhớ
+  "real_life",
+  "hook_answer":    "...",                                # trả lời câu khởi động
+  "video":          {query, url},                         # link tìm clip YouTube
   "quiz": [{question, options[4], answer_index, explanation, bloom, difficulty}]
 }
 
@@ -79,9 +80,18 @@ def compose_learning_object(row: dict, lo: dict, questions: list,
             "points": s.get("points", []),
         } for s in lo.get("sections", [])],
         "real_life": lo.get("real_life", []),
-        "memory_hooks": lo.get("memory_hooks", []),
-        "misconceptions": lo.get("misconceptions", []),
+        "hook_answer": lo.get("hook_answer", ""),
     }
+    cmp = lo.get("comparison")
+    if isinstance(cmp, dict) and cmp.get("headers") and cmp.get("rows"):
+        out["comparison"] = {
+            "title": cmp.get("title", ""),
+            "headers": cmp.get("headers", []),
+            "rows": cmp.get("rows", []),
+        }
+    if lo.get("video_url"):
+        out["video"] = {"query": lo.get("video_query", ""), "url": lo["video_url"]}
+    # cache v1 cũ có thể còn field mindmap (cây) — vẫn xuất mermaid cho tương thích.
     mm = lo.get("mindmap")
     if mm and mm.get("root"):
         out["mindmap_mermaid"] = to_mermaid(mm)

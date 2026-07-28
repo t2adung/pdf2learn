@@ -30,8 +30,9 @@ from pathlib import Path
 from utils import load_json, log, save_json, warn
 
 # Phiên bản shape của 03_content.json. v2 = Learning Object JSON
-# (objectives/sections/mindmap/...) thay cho blob content_markdown (v1).
-CONTENT_VERSION = 2
+# (objectives/sections/comparison/...) thay cho blob content_markdown (v1).
+# v3 = bỏ mindmap, thêm comparison (bảng so sánh) + hook_answer + video.
+CONTENT_VERSION = 3
 
 
 def main():
@@ -43,7 +44,7 @@ def main():
                     choices=["full", "compact", "minimal"],
                     help="mật độ chữ cột content (markdown): full (đủ) | compact "
                          "(3 point/mục, cắt point dài) | minimal (chỉ mục tiêu + nội "
-                         "dung chính + mindmap). Đổi mức 0 token — chỉ re-render.")
+                         "dung chính + bảng so sánh). Đổi mức 0 token — chỉ re-render.")
     ap.add_argument("--content-format", default="markdown",
                     choices=["markdown", "json"],
                     help="định dạng cột content trong topics.csv: markdown "
@@ -55,7 +56,7 @@ def main():
                     help='khối lớp ghi vào JSON (mặc định: tự rút số từ --level, "Lớp 6" -> "6")')
     ap.add_argument("--export-json", action="store_true",
                     help="ghi thêm output/json/{topic_slug}.json theo format đích "
-                         "(nhúng quiz, mindmap_mermaid) — 0 token, sinh từ cache")
+                         "(nhúng quiz, comparison, hook_answer, video) — 0 token, sinh từ cache")
     ap.add_argument("--toc-file", type=Path, default=None,
                     help="dùng file 01_toc.json dựng sẵn (vd từ build_toc.py) "
                          "thay cho bookmark/AI — 0 token, chính xác 100%%")
@@ -75,8 +76,8 @@ def main():
                          "(tiết kiệm ~50% request stage 3+5; xem README về trade-off)")
     ap.add_argument("--no-images", action="store_true", help="bỏ qua stage 4")
     ap.add_argument("--book-images", action="store_true",
-                    help="nhúng THÊM ảnh trích từ trang PDF (AI lọc, +1 request/topic). "
-                         "Mặc định TẮT: chỉ giữ mindmap SVG do code vẽ (0 token, gọn giao diện).")
+                    help="nhúng ảnh trích từ trang PDF (AI lọc, +1 request/topic). "
+                         "Mặc định TẮT: bài tóm tắt bằng bảng so sánh trong content (0 token, gọn giao diện).")
     ap.add_argument("--no-validate", action="store_true",
                     help="bỏ qua pass kiểm chứng đáp án ở stage 5")
     ap.add_argument("--review", action="store_true",
@@ -220,8 +221,8 @@ def main():
 
     # ---- Guard phiên bản cache content (v1 markdown blob vs v2 LO JSON) ----
     if content_cached and content_cached.get("_v") != CONTENT_VERSION:
-        sys.exit("Cache 03_content.json thuộc phiên bản cũ (markdown blob).\n"
-                 "Chạy lại với: --redo-from 3")
+        sys.exit("Cache 03_content.json thuộc phiên bản cũ (thiếu bảng so sánh / "
+                 "câu trả lời khởi động).\nChạy lại với: --redo-from 3")
 
     # ---- Stage 3-6: TOPIC-MAJOR — xong trọn gói từng topic ----
     # (content -> images -> questions -> review cho topic N rồi mới sang N+1;

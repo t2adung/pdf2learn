@@ -21,16 +21,24 @@
 - Hiểu nguồn gốc của mọi sự vật.
 - Rút kinh nghiệm để định hướng tương lai.
 
+## 📊 Bảng so sánh ghi nhớ
+*So sánh Lịch sử và môn Lịch sử*
+
+| Tiêu chí | Lịch sử | Môn Lịch sử |
+| --- | --- | --- |
+| Là gì | Những gì đã xảy ra | Khoa học nghiên cứu quá khứ |
+| Ví dụ \| minh hoạ | Ảnh cũ của gia đình |  |
+
 ## 🌍 Liên hệ thực tế
 - Album ảnh cũ của ông bà ghi lại lịch sử của gia đình em.
 
-## ⚠️ Dễ nhầm lẫn
-| Nhiều bạn nghĩ | Thực ra |
-| --- | --- |
-| Lịch sử chỉ là chuyện vua chúa, chiến tranh. | Lịch sử là mọi thứ đã xảy ra, kể cả việc em học lớp 5 năm ngoái. |
-
-## 💡 Mẹo nhớ
-- Lịch sử = ĐÃ + XẢY RA. Đã xảy ra rồi thì là lịch sử, dù mới hôm qua.
-
 ## 🖼️ Hình minh hoạ
-![Sơ đồ tư duy](ls-bai-1_01.svg)
+![Ảnh minh hoạ](ls-bai-1_01.png)
+
+## 🎬 Video bài giảng
+- [Tìm clip giảng bài trên YouTube: lịch sử là gì lớp 6 bài giảng](https://www.youtube.com/results?search_query=l%E1%BB%8Bch+s%E1%BB%AD)
+
+## ✅ Trả lời câu hỏi khởi động
+> Chiếc điện thoại em đang cầm, 50 năm trước to bằng cả căn phòng. Vì sao?
+
+👉 Vì công nghệ luôn thay đổi theo thời gian — đó chính là lịch sử.

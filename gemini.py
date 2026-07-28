@@ -245,20 +245,20 @@ class MockGemini(Gemini):
                      "points": ["Lý do thứ nhất (mock).",
                                 "Lý do thứ hai, gắn với đời sống."]},
                 ],
-                "mindmap": {
-                    "root": "Khái niệm X",
-                    "branches": [
-                        {"label": "Đặc điểm", "children": ["Đặc điểm 1", "Đặc điểm 2"]},
-                        {"label": "Phân loại", "children": ["Loại A", "Loại B"]},
-                        {"label": "Ứng dụng", "children": ["Trong đời sống", "Trong kỹ thuật"]},
+                "comparison": {
+                    "title": "So sánh nhanh để nhớ lâu (mock)",
+                    "headers": ["Tiêu chí", "Khái niệm X", "Khái niệm Y"],
+                    "rows": [
+                        ["Định nghĩa", "Định nghĩa X (mock)", "Định nghĩa Y (mock)"],
+                        ["Đặc điểm", "Đặc điểm nổi bật của X", "Đặc điểm nổi bật của Y"],
+                        # BẪY có chủ đích: ô chứa dấu | và số ô THIẾU so với headers,
+                        # để --dry-run kiểm tra _comparison() escape + đệm cột đúng.
+                        ["Ví dụ | thực tế", "Ví dụ về X"],
                     ],
                 },
                 "real_life": ["Ví dụ đời sống minh hoạ khái niệm X (mock)."],
-                "memory_hooks": ["Nhớ X bằng ba chữ Đ: Đặc điểm - Định nghĩa - Đời sống."],
-                "misconceptions": [
-                    {"wrong": "Nhiều bạn nghĩ X và Y là một (mock).",
-                     "correct": "Thực ra X khác Y ở tính chất cốt lõi."},
-                ],
+                "hook_answer": "Vì X hiện diện khắp nơi nên ta quen mắt, ít khi để ý (mock).",
+                "video_query": "khái niệm X lớp 6 bài giảng",
                 "key_points": [
                     "Khái niệm X là nền tảng của chủ đề",
                     "Tính chất Y phân biệt X với Z",

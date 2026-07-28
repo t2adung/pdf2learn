@@ -6,9 +6,9 @@ THUẦN CODE, 0 token AI.
 Ràng buộc đã biết về bibeli:
 - Frontend dùng markdown-it/marked THUẦN => KHÔNG có mermaid.
   => tuyệt đối không sinh fence ```mermaid (sẽ hiện thành khối code xấu).
-  Mindmap đi đường ảnh SVG qua stage_images.
 - Bảng: markdown-it và marked đều bật table mặc định. Nếu bibeli tắt,
-  đặt use_tables=False để đổ sang dạng danh sách.
+  đặt use_tables=False để đổ sang dạng danh sách. Bài học tóm tắt bằng BẢNG
+  SO SÁNH (thay cho mindmap ảnh cũ) — thuần markdown, hiển thị mọi nơi.
 """
 
 def content_markdown(entry: dict, images: list = None,
@@ -31,10 +31,11 @@ H_OBJECTIVES = "## 🎯 Mục tiêu"
 H_HOOK = "## 🤔 Câu hỏi khởi động"
 H_TERMS = "## 🔑 Từ khoá cần nhớ"
 H_MAIN = "## 📚 Nội dung chính"
+H_COMPARE = "## 📊 Bảng so sánh ghi nhớ"
 H_REAL = "## 🌍 Liên hệ thực tế"
-H_MISC = "## ⚠️ Dễ nhầm lẫn"
-H_HOOKS = "## 💡 Mẹo nhớ"
 H_IMAGES = "## 🖼️ Hình minh hoạ"
+H_VIDEO = "## 🎬 Video bài giảng"
+H_ANSWER = "## ✅ Trả lời câu hỏi khởi động"
 
 
 def _cell(s: str) -> str:
@@ -64,6 +65,36 @@ def _bullets(items, max_words: int = 0) -> list:
     return out
 
 
+def _comparison(cmp: dict, use_tables: bool = True) -> list:
+    """Bảng so sánh nội dung bài -> markdown. Đệm/cắt mỗi hàng cho đúng số cột
+    (một hàng lệch cột là đủ vỡ cả bảng sau khi import). Trả list dòng, [] nếu
+    thiếu dữ liệu."""
+    if not isinstance(cmp, dict):
+        return []
+    headers = [str(h) for h in (cmp.get("headers") or []) if str(h).strip()]
+    rows = [r for r in (cmp.get("rows") or []) if isinstance(r, (list, tuple)) and any(str(c).strip() for c in r)]
+    if len(headers) < 2 or not rows:
+        return []
+    n = len(headers)
+    out = []
+    if cmp.get("title"):
+        out.append(f"*{_line(cmp['title'])}*")
+        out.append("")
+    if use_tables:
+        out.append("| " + " | ".join(_cell(h) for h in headers) + " |")
+        out.append("| " + " | ".join("---" for _ in headers) + " |")
+        for r in rows:
+            cells = ([_cell(c) for c in r] + [""] * n)[:n]
+            out.append("| " + " | ".join(cells) + " |")
+    else:
+        for r in rows:
+            cells = ([_line(c) for c in r] + [""] * n)[:n]
+            out.append(f"- **{cells[0]}**")
+            for h, c in zip(headers[1:], cells[1:]):
+                out.append(f"  - {_line(h)}: {c}")
+    return out
+
+
 def _trim(s: str, max_words: int) -> str:
     """Cắt bớt point quá dài về max_words từ (0 = không cắt), thêm … nếu cắt.
     Cắt ở ranh giới từ, không cắt giữa chữ."""
@@ -80,17 +111,20 @@ def _trim(s: str, max_words: int) -> str:
 #   full    : giữ nguyên mọi thứ (mặc định cũ)
 #   compact : mỗi section tối đa 3 point, point dài cắt còn 22 từ; bỏ ví dụ ở
 #             key_terms; giữ đủ section
-#   minimal : chỉ Mục tiêu + Nội dung chính (2 point/section, 18 từ) + Mindmap.
-#             Các phần Liên hệ/Dễ nhầm/Mẹo nhớ ẩn đi (đọc nhanh, ôn tập)
+#   minimal : chỉ Mục tiêu + Nội dung chính (2 point/section, 18 từ) + Bảng so
+#             sánh + Trả lời khởi động. Liên hệ/Dễ nhầm/Mẹo nhớ ẩn (đọc nhanh, ôn tập)
 DENSITY = {
     "full":    {"max_points": 0, "max_words": 0,  "term_example": True,
                 "keep": {"objectives", "hook", "key_terms", "sections",
-                         "real_life", "misconceptions", "memory_hooks", "images"}},
+                         "comparison", "real_life", "images", "video",
+                         "hook_answer"}},
     "compact": {"max_points": 3, "max_words": 22, "term_example": False,
                 "keep": {"objectives", "hook", "key_terms", "sections",
-                         "real_life", "misconceptions", "memory_hooks", "images"}},
+                         "comparison", "real_life", "images", "video",
+                         "hook_answer"}},
     "minimal": {"max_points": 2, "max_words": 18, "term_example": False,
-                "keep": {"objectives", "sections", "images"}},
+                "keep": {"objectives", "sections", "comparison", "images",
+                         "hook_answer"}},
 }
 
 
@@ -150,27 +184,16 @@ def render(lo: dict, images: list = None, use_tables: bool = True,
             p += _bullets(_cap(s.get("points") or []), mw)
         p.append("")
 
+    if lo.get("comparison") and "comparison" in keep:
+        rows_md = _comparison(lo["comparison"], use_tables)
+        if rows_md:
+            p.append(H_COMPARE)
+            p += rows_md
+            p.append("")
+
     if lo.get("real_life") and "real_life" in keep:
         p.append(H_REAL)
         p += _bullets(_cap(lo["real_life"]), mw)
-        p.append("")
-
-    if lo.get("misconceptions") and "misconceptions" in keep:
-        p.append(H_MISC)
-        if use_tables:
-            p.append("| Nhiều bạn nghĩ | Thực ra |")
-            p.append("| --- | --- |")
-            for m in _cap(lo["misconceptions"]):
-                p.append(f"| {_cell(m.get('wrong',''))} | {_cell(m.get('correct',''))} |")
-        else:
-            for m in _cap(lo["misconceptions"]):
-                p.append(f"- ❌ {_line(m.get('wrong',''))}")
-                p.append(f"  - ✅ {_line(m.get('correct',''))}")
-        p.append("")
-
-    if lo.get("memory_hooks") and "memory_hooks" in keep:
-        p.append(H_HOOKS)
-        p += _bullets(_cap(lo["memory_hooks"]), mw)
         p.append("")
 
     if images and "images" in keep:
@@ -178,6 +201,22 @@ def render(lo: dict, images: list = None, use_tables: bool = True,
         for img in images:
             cap = _line(img.get("caption", "")).replace("]", ")")
             p.append(f"![{cap}]({img['file']})")
+        p.append("")
+
+    if lo.get("video_url") and "video" in keep:
+        p.append(H_VIDEO)
+        q = _line(lo.get("video_query", ""))
+        label = "Tìm clip giảng bài trên YouTube" + (f": {q}" if q else "")
+        p.append(f"- [{label}]({_line(lo['video_url'])})")
+        p.append("")
+
+    # Mục CUỐI CÙNG: chốt lại bằng câu trả lời cho câu hỏi khởi động.
+    if lo.get("hook_answer") and "hook_answer" in keep:
+        p.append(H_ANSWER)
+        if lo.get("hook"):
+            p.append(f"> {_line(lo['hook'])}")
+            p.append("")
+        p.append(f"👉 {_line(lo['hook_answer'])}")
         p.append("")
 
     # gộp dòng trống thừa

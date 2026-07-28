@@ -77,6 +77,27 @@ Kiểm tra nhanh key đã vào chưa: `python3 -c "import os; print(bool(os.envi
 
 ---
 
+## Cập nhật 7: bố cục bài học mới — bảng so sánh, trả lời khởi động, video YouTube
+
+Đổi cách tóm tắt & chốt bài để học sinh nhớ lâu hơn. Cache content lên **v3**
+(`--redo-from 3` để sinh lại; cache v2 cũ sẽ bị chặn với hướng dẫn rõ).
+
+- **Bảng so sánh thay cho mindmap.** Field `comparison {title, headers[], rows[]}`
+  render thành bảng markdown ngay trong cột `content` (render_markdown._comparison,
+  0 token) — đặt các nội dung của bài cạnh nhau theo tiêu chí, hiển thị mọi nơi
+  (không cần ảnh SVG). stage_images không còn vẽ mindmap; mặc định topic **không
+  kèm ảnh** (bật `--book-images` nếu muốn ảnh trang sách).
+- **Mục cuối: "✅ Trả lời câu hỏi khởi động".** Field `hook_answer` chốt lại
+  bằng câu trả lời cho chính `hook` ở đầu bài — luôn là mục CUỐI CÙNG.
+- **"🎬 Video bài giảng".** Code dựng link tìm kiếm YouTube từ `video_query`
+  (AI gợi ý cụm từ khoá, thiếu thì suy từ tên bài + lớp) — 0 token, không bịa URL.
+- **Bỏ mục "💡 Mẹo nhớ" và "⚠️ Dễ nhầm lẫn"** khỏi bài học (gỡ cả field
+  `memory_hooks` / `misconceptions` khỏi schema, prompt và JSON đích).
+
+Kiểm chứng 0 token: `python3 test_render.py` và `python3 main.py sample.pdf --dry-run`.
+
+---
+
 ## Cập nhật 6: toc_from_images.py nhận thẳng FILE PDF trang mục lục (mới)
 
 Nguồn mục lục giờ nhận diện theo đuôi file, không bắt buộc phải chụp ảnh trước:

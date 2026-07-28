@@ -5,15 +5,17 @@ Thay đổi cốt lõi so với v1:
 - v1: AI trả về 1 blob "content_markdown" => format do AI quyết, khó kiểm soát,
   muốn đổi layout phải sinh lại (tốn token).
 - v2: AI CHỈ trả về DỮ LIỆU CÓ CẤU TRÚC (objectives, key_terms, sections,
-  mindmap, misconceptions...). Cú pháp Markdown/SVG do CODE sinh
-  (render_markdown.py + mindmap_svg.py) => 0 token cho khâu format,
-  đổi layout chỉ cần re-render từ cache, không gọi lại AI.
+  comparison, hook_answer...). Cú pháp Markdown/bảng do CODE
+  sinh (render_markdown.py) => 0 token cho khâu format, đổi layout chỉ cần
+  re-render từ cache, không gọi lại AI. Link clip YouTube cũng do code dựng.
 
 Kỹ thuật chống hallucination (giữ nguyên từ v1):
 - Chỉ gửi đúng các trang của topic (cắt sub-PDF theo page range).
 - Prompt tách rõ field nào phải bám tài liệu, field nào được bổ sung.
 - key_points sinh ra ở đây sẽ được Stage 5 dùng để đảm bảo coverage câu hỏi.
 """
+import urllib.parse
+
 import fitz
 
 from utils import log
@@ -42,34 +44,23 @@ CONTENT_SCHEMA = {
             },
             "required": ["heading", "points"],
         }},
-        "mindmap": {
+        "comparison": {
             "type": "object",
             "properties": {
-                "root": {"type": "string"},
-                "branches": {"type": "array", "items": {
-                    "type": "object",
-                    "properties": {
-                        "label": {"type": "string"},
-                        "children": {"type": "array", "items": {"type": "string"}},
-                    },
-                    "required": ["label", "children"],
+                "title": {"type": "string"},
+                "headers": {"type": "array", "items": {"type": "string"}},
+                "rows": {"type": "array", "items": {
+                    "type": "array", "items": {"type": "string"},
                 }},
             },
-            "required": ["root", "branches"],
+            "required": ["headers", "rows"],
         },
         "real_life": {"type": "array", "items": {"type": "string"}},
-        "memory_hooks": {"type": "array", "items": {"type": "string"}},
-        "misconceptions": {"type": "array", "items": {
-            "type": "object",
-            "properties": {
-                "wrong": {"type": "string"},
-                "correct": {"type": "string"},
-            },
-            "required": ["wrong", "correct"],
-        }},
+        "hook_answer": {"type": "string"},
+        "video_query": {"type": "string"},
         "key_points": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["objectives", "sections", "mindmap", "key_points"],
+    "required": ["objectives", "sections", "comparison", "key_points"],
 }
 
 CONTENT_PROMPT = """Bạn là giáo viên giỏi, đang soạn bài học cho học sinh trình độ "{level}".
@@ -90,8 +81,14 @@ NHÓM PHẢI BÁM SÁT TÀI LIỆU (tuyệt đối không bịa thêm số liệ
   emoji phù hợp, + 2-4 points (mỗi point <= 20 từ). Giải thích thuật ngữ khó
   gọn trong 1 point.
 - "key_terms": 2-5 thuật ngữ quan trọng. definition <= 20 từ; example ngắn.
-- "mindmap": sơ đồ tư duy tóm tắt bài. root = tên khái niệm trung tâm (ngắn),
-  3-5 branches, mỗi branch label <= 5 từ và 2-4 children (mỗi child <= 8 từ).
+- "comparison": BẢNG SO SÁNH các nội dung của bài đặt cạnh nhau để học sinh dễ
+  nhớ lâu. Chọn 2-4 đối tượng/khái niệm/giai đoạn của chính bài này, so theo
+  2-5 tiêu chí. "headers" = danh sách tiêu đề cột: ô ĐẦU là tên nhóm tiêu chí
+  (vd "Tiêu chí"), các ô sau là tên từng đối tượng đem so sánh. "rows" = danh
+  sách hàng; MỖI hàng là một mảng ô có ĐỘ DÀI ĐÚNG BẰNG số headers: [tên tiêu
+  chí, giá trị cho từng đối tượng...]. Mỗi ô ngắn gọn <= 12 từ, bám tài liệu.
+  Nếu bài không có 2 đối tượng để so trực tiếp, lập bảng tổng hợp: headers =
+  ["Nội dung", "Ý chính", "Ví dụ / Ghi nhớ"], mỗi hàng là một nội dung của bài.
 - "key_points": 6-15 ý kiến thức QUAN TRỌNG NHẤT (mỗi ý 1 câu hoàn chỉnh, độc
   lập, kiểm tra được — dùng sinh câu hỏi trắc nghiệm). Số lượng tỉ lệ lượng
   kiến thức thật: bài ngắn ít point, bài dài nhiều point. key_points KHÔNG bị
@@ -100,9 +97,12 @@ NHÓM PHẢI BÁM SÁT TÀI LIỆU (tuyệt đối không bịa thêm số liệ
 
 NHÓM ĐƯỢC PHÉP BỔ SUNG kiến thức ngoài tài liệu (phù hợp trình độ "{level}"):
 - "hook": 1 câu hỏi khởi động gây tò mò, gắn đời sống (<= 30 từ).
+- "hook_answer": câu TRẢ LỜI cho chính "hook" ở trên — giải đáp trực tiếp, dựa
+  trên kiến thức của bài, để chốt lại bài học (<= 40 từ). Phải ăn khớp với hook.
 - "real_life": 1-2 ví dụ ứng dụng thực tế (mỗi ví dụ <= 20 từ).
-- "memory_hooks": 1-2 mẹo ghi nhớ ngắn.
-- "misconceptions": 1-2 cặp hiểu-lầm (wrong) và đính chính (correct), mỗi vế <= 20 từ."""
+- "video_query": cụm từ khoá tiếng Việt để TÌM clip bài giảng của bài này trên
+  YouTube (vd "quang hợp lớp 6 bài giảng"), <= 10 từ. Chỉ là gợi ý tìm kiếm,
+  KHÔNG bịa đường link cụ thể."""
 
 
 def cut_pages(doc: fitz.Document, page_start: int, page_end: int,
@@ -146,7 +146,20 @@ def generate_content_one(doc: fitz.Document, row: dict, client, dpi: int = 0) ->
         [client.pdf_part(sub_pdf, f"{slug}.pdf"), {"text": prompt}],
         CONTENT_SCHEMA, tag="content")
     # dọn field rỗng để render sạch
-    for k in ("objectives", "key_terms", "sections", "real_life",
-              "memory_hooks", "misconceptions", "key_points"):
+    for k in ("objectives", "key_terms", "sections", "real_life", "key_points"):
         lo[k] = [x for x in (lo.get(k) or []) if x]
+    # Link YouTube: code tự dựng URL tìm kiếm từ khoá (0 token, không bao giờ là
+    # link bịa/hỏng). AI chỉ gợi ý cụm từ khoá; thiếu thì suy từ tên bài + lớp.
+    lo["video_url"], lo["video_query"] = _youtube_search(row, lo.get("video_query"))
     return lo
+
+
+def _youtube_search(row: dict, query: str = ""):
+    """Trả về (url, query) tìm clip bài giảng trên YouTube. THUẦN CODE, 0 token."""
+    q = (query or "").strip()
+    if not q:
+        q = f"{row['topic_title']} {row.get('level', '')}".strip()
+    if "bài giảng" not in q.lower():
+        q = f"{q} bài giảng"
+    url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(q)
+    return url, q
