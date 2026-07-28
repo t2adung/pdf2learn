@@ -39,6 +39,10 @@ def main():
     ap = argparse.ArgumentParser(description="PDF -> learning package (topics + MCQ)")
     ap.add_argument("pdf", type=Path, help="đường dẫn file PDF")
     ap.add_argument("--level", default="Lớp 6", help='giá trị cột level, vd "Lớp 6"')
+    ap.add_argument("--limit-topics", type=int, default=0, metavar="N",
+                    help="chỉ xử lý + xuất N bài ĐẦU TIÊN (vd 2 để test nhanh 1-2 bài "
+                         "rồi xem topics.csv). 0 = tất cả. Cache mục lục đầy đủ vẫn "
+                         "giữ nguyên — chạy lại bỏ cờ này để làm nốt các bài còn lại.")
     ap.add_argument("--model", default="gemini-2.5-flash")
     ap.add_argument("--density", default="full",
                     choices=["full", "compact", "minimal"],
@@ -199,6 +203,13 @@ def main():
 
     if not structure:
         sys.exit("Không xác định được topic nào — kiểm tra lại PDF/mục lục.")
+
+    # ---- Giới hạn N bài đầu (test nhanh) — cắt structure IN-MEMORY, cache mục
+    # lục đầy đủ (02_structure.json) giữ nguyên nên chạy lại bỏ cờ là làm nốt. ----
+    if args.limit_topics and args.limit_topics > 0 and args.limit_topics < len(structure):
+        structure = structure[:args.limit_topics]
+        log(f"── Giới hạn: chỉ xử lý {len(structure)} bài đầu tiên "
+            f"(--limit-topics {args.limit_topics}) ──")
 
     # ---- Guard 0 token: xác nhận mục lục TRƯỚC khi đốt quota AI ----
     # Mục lục sai (offset lệch, AI đoán nhầm) là lỗi đắt nhất: mọi stage sau
