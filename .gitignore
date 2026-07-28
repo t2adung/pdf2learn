@@ -1,0 +1,13 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+
+# Virtual env
+.venv/
+venv/
+
+# Pipeline outputs (sinh lại được, không commit)
+runs/
+
+# Local env
+.env
