@@ -5,9 +5,11 @@
 - **Thêm mục cuối `✅ Trả lời câu hỏi khởi động`** (field `hook_answer`): chốt
   bài bằng câu trả lời cho chính câu hỏi khởi động (`hook`) ở đầu bài. LUÔN là
   mục cuối cùng trong cột `content`.
-- **Bỏ `💡 Mẹo nhớ` (`memory_hooks`) và `⚠️ Dễ nhầm lẫn` (`misconceptions`)**,
-  thay bằng **`📊 Bảng so sánh ghi nhớ`** (field `comparison` = `{items, rows}`):
-  bảng so sánh các phần/khái niệm trong bài — giống nhau, khác nhau ở đâu.
+- **Bỏ hẳn các mục `💡 Mẹo nhớ` (`memory_hooks`), `⚠️ Dễ nhầm lẫn`
+  (`misconceptions`) và `📊 Bảng so sánh ghi nhớ` (`comparison`)** khỏi schema,
+  prompt, JSON đích, mock và test. Cột `content` giờ gồm: Mục tiêu → Câu hỏi
+  khởi động → Từ khoá → Nội dung chính → Liên hệ thực tế → Hình minh hoạ →
+  Trả lời câu hỏi khởi động.
 - **`--limit N`**: chỉ xử lý N bài đầu rồi export CSV luôn (test nhanh bài 1-2).
 - Đổi schema ⇒ cache `03_content.json` cũ hết hợp lệ, chạy lại với `--redo-from 3`.
 

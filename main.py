@@ -31,7 +31,7 @@ from utils import load_json, log, save_json, warn
 
 # Phiên bản shape của 03_content.json. v2 = Learning Object JSON
 # (objectives/sections/mindmap/...) thay cho blob content_markdown (v1).
-# v3 = bỏ memory_hooks/misconceptions, thêm comparison + hook_answer.
+# v3 = bỏ memory_hooks/misconceptions/comparison, thêm hook_answer.
 CONTENT_VERSION = 3
 
 

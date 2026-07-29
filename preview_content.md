@@ -24,12 +24,6 @@
 ## 🌍 Liên hệ thực tế
 - Album ảnh cũ của ông bà ghi lại lịch sử của gia đình em.
 
-## 📊 Bảng so sánh ghi nhớ
-| Tiêu chí | Ngày xưa | Bây giờ |
-| --- | --- | --- |
-| Thời gian | Đã \| trôi qua | Đang diễn ra |
-| Thay đổi được? | Không | Có |
-
 ## 🖼️ Hình minh hoạ
 ![Sơ đồ tư duy](ls-bai-1_01.svg)
 

@@ -5,7 +5,7 @@ Thay đổi cốt lõi so với v1:
 - v1: AI trả về 1 blob "content_markdown" => format do AI quyết, khó kiểm soát,
   muốn đổi layout phải sinh lại (tốn token).
 - v2: AI CHỈ trả về DỮ LIỆU CÓ CẤU TRÚC (objectives, key_terms, sections,
-  mindmap, comparison, hook_answer...). Cú pháp Markdown/SVG do CODE sinh
+  mindmap, hook_answer...). Cú pháp Markdown/SVG do CODE sinh
   (render_markdown.py + mindmap_svg.py) => 0 token cho khâu format,
   đổi layout chỉ cần re-render từ cache, không gọi lại AI.
 
@@ -58,21 +58,6 @@ CONTENT_SCHEMA = {
             "required": ["root", "branches"],
         },
         "real_life": {"type": "array", "items": {"type": "string"}},
-        "comparison": {
-            "type": "object",
-            "properties": {
-                "items": {"type": "array", "items": {"type": "string"}},
-                "rows": {"type": "array", "items": {
-                    "type": "object",
-                    "properties": {
-                        "aspect": {"type": "string"},
-                        "values": {"type": "array", "items": {"type": "string"}},
-                    },
-                    "required": ["aspect", "values"],
-                }},
-            },
-            "required": ["items", "rows"],
-        },
         "hook_answer": {"type": "string"},
         "key_points": {"type": "array", "items": {"type": "string"}},
     },
@@ -99,12 +84,6 @@ NHÓM PHẢI BÁM SÁT TÀI LIỆU (tuyệt đối không bịa thêm số liệ
 - "key_terms": 2-5 thuật ngữ quan trọng. definition <= 20 từ; example ngắn.
 - "mindmap": sơ đồ tư duy tóm tắt bài. root = tên khái niệm trung tâm (ngắn),
   3-5 branches, mỗi branch label <= 5 từ và 2-4 children (mỗi child <= 8 từ).
-- "comparison": BẢNG SO SÁNH GHI NHỚ giữa 2-3 khái niệm/phần chính trong bài
-  (giúp học sinh phân biệt cái GIỐNG và cái KHÁC nhau). "items" = 2-3 đối tượng
-  đem ra so sánh (tên ngắn, là các CỘT). "rows" = 2-4 tiêu chí so sánh; mỗi row:
-  "aspect" là tên tiêu chí (<= 6 từ) và "values" là danh sách giá trị ĐÚNG THEO
-  THỨ TỰ items (mỗi giá trị <= 12 từ, số phần tử values = số phần tử items). Nếu
-  bài không có gì đáng so sánh thì để "items" và "rows" rỗng.
 - "key_points": 6-15 ý kiến thức QUAN TRỌNG NHẤT (mỗi ý 1 câu hoàn chỉnh, độc
   lập, kiểm tra được — dùng sinh câu hỏi trắc nghiệm). Số lượng tỉ lệ lượng
   kiến thức thật: bài ngắn ít point, bài dài nhiều point. key_points KHÔNG bị
@@ -162,13 +141,4 @@ def generate_content_one(doc: fitz.Document, row: dict, client, dpi: int = 0) ->
     # dọn field rỗng để render sạch
     for k in ("objectives", "key_terms", "sections", "real_life", "key_points"):
         lo[k] = [x for x in (lo.get(k) or []) if x]
-    # comparison là dict {items, rows}; bỏ nếu không đủ dữ liệu để dựng bảng
-    comp = lo.get("comparison") or {}
-    items = [i for i in (comp.get("items") or []) if str(i).strip()]
-    rows = [r for r in (comp.get("rows") or [])
-            if r and str(r.get("aspect", "")).strip() and any(r.get("values") or [])]
-    if len(items) >= 2 and rows:
-        lo["comparison"] = {"items": items, "rows": rows}
-    else:
-        lo.pop("comparison", None)
     return lo

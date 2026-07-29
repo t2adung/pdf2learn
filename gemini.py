@@ -254,14 +254,6 @@ class MockGemini(Gemini):
                     ],
                 },
                 "real_life": ["Ví dụ đời sống minh hoạ khái niệm X (mock)."],
-                "comparison": {
-                    "items": ["Khái niệm X", "Khái niệm Y"],
-                    "rows": [
-                        # BẪY có chủ đích: dấu | để --dry-run kiểm tra _cell() thoát đúng
-                        {"aspect": "Định nghĩa", "values": ["X là A | B (mock)", "Y là C (mock)"]},
-                        {"aspect": "Ví dụ", "values": ["Ví dụ về X", "Ví dụ về Y"]},
-                    ],
-                },
                 "hook_answer": "Vì X có mặt khắp nơi trong đời sống nên ta ít để ý (mock).",
                 "key_points": [
                     "Khái niệm X là nền tảng của chủ đề",
