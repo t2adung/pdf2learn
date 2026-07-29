@@ -14,10 +14,13 @@
 - **`--redo-content`**: sinh lại content (stage 3) + ảnh mindmap (stage 4) nhưng
   GIỮ NGUYÊN câu hỏi (stage 5) + review (stage 6) — 0 token cho câu hỏi. Dùng khi
   chỉ muốn làm mới bài học mà không sinh lại bộ câu hỏi đã duyệt.
-- **Ảnh sách (`--book-images`) chèn vào ĐÚNG mục nội dung**: AI gán `section_index`
-  ngay trong request lọc ảnh sẵn có (KHÔNG thêm request ⇒ không tốn thêm token).
-  Mục "🖼️ Hình minh hoạ" cuối bài giờ chỉ chứa ảnh mindmap; ảnh trích từ trang
-  sách nằm dưới đúng mục "Nội dung chính" mà nó minh hoạ.
+- **Ảnh sách (`--book-images`) trích CHÍNH XÁC theo vùng + caption thật — 0 token**
+  (thay hẳn cách nhờ AI lọc/gán mục trước đây): định vị từng hình bằng
+  `get_image_rects` → render đúng vùng ra PNG (`get_pixmap(clip=…)`, bắt cả nhãn/
+  nét vẽ chồng lên) → lấy CAPTION THẬT của sách (dòng "Hình 1.2: …" ngay dưới/
+  trên hình) → gán vào đúng mục "Nội dung chính" bằng CODE (so khớp caption +
+  văn cảnh với heading/points). Không gọi AI ⇒ 0 token. Mục "🖼️ Hình minh hoạ"
+  cuối bài chỉ còn ảnh mindmap. Test: `test_images.py`.
 - Đổi schema ⇒ cache `03_content.json` cũ hết hợp lệ, chạy lại với `--redo-from 3`.
 
 ## Cài đặt lần đầu (macOS / Linux)
