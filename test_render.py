@@ -89,6 +89,24 @@ raw = tbl[0].replace("\\|", "")
 check("dòng bảng vẫn đúng 3 cột", raw.count("|") == 4, f"{raw.count('|')} thanh dọc")
 check("xuống dòng trong ô đã bị làm phẳng", "Mốc chia theo thời gian" in md)
 
+# --- 2b. ảnh sách chèn vào mục nội dung; mục Hình minh hoạ chỉ giữ mindmap ---
+md_img = render(LO, images=[
+    {"file": "ls-bai-1_01.png", "caption": "Ảnh sách mục 1",
+     "source": "pdf_page_5", "section_index": 0},          # -> mục nội dung 0
+    {"file": "ls-bai-1_99.svg", "caption": "Sơ đồ tư duy",
+     "source": "code_mindmap"},                             # -> mục Hình minh hoạ
+])
+lines = md_img.splitlines()
+i_sec0 = lines.index("### Mọi thứ đều thay đổi theo thời gian")
+i_sec1 = lines.index("### Vì sao cần học lịch sử?")
+i_book = lines.index("![Ảnh sách mục 1](ls-bai-1_01.png)")
+i_imghead = lines.index("## 🖼️ Hình minh hoạ")
+i_mind = lines.index("![Sơ đồ tư duy](ls-bai-1_99.svg)")
+check("ảnh sách nằm TRONG mục nội dung tương ứng (không xuống mục Hình minh hoạ)",
+      i_sec0 < i_book < i_sec1 and i_book < i_imghead, f"book@{i_book}")
+check("mục Hình minh hoạ CHỈ chứa mindmap", i_imghead < i_mind
+      and "ls-bai-1_01.png" not in md_img.split("## 🖼️ Hình minh hoạ")[1])
+
 # --- 3. sống sót qua CSV round-trip ---
 buf = io.StringIO()
 w = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)

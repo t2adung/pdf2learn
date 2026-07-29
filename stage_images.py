@@ -27,17 +27,26 @@ FILTER_SCHEMA = {
             "properties": {
                 "index": {"type": "integer"},
                 "caption": {"type": "string"},
+                "section_index": {"type": "integer"},
             },
-            "required": ["index", "caption"],
+            "required": ["index", "caption", "section_index"],
         }},
     },
     "required": ["keep"],
 }
 
 FILTER_PROMPT = """Các ảnh đính kèm được trích từ trang sách của bài học: "{topic_title}".
+
+Các MỤC NỘI DUNG của bài (đánh số từ 0):
+{sections_list}
+
 Chọn những ảnh CÓ GIÁ TRỊ MINH HOẠ KIẾN THỨC (sơ đồ, biểu đồ, hình vẽ khoa học, ảnh chụp minh hoạ khái niệm).
 LOẠI BỎ: logo, hoạ tiết trang trí, ảnh nền, icon, ảnh mờ/vô nghĩa.
-Với mỗi ảnh giữ lại, viết caption ngắn gọn bằng ngôn ngữ của bài học (index tính từ 0 theo thứ tự ảnh đính kèm).
+Với mỗi ảnh giữ lại, trả về:
+- "index": số thứ tự ảnh (tính từ 0 theo thứ tự ảnh đính kèm).
+- "caption": chú thích ngắn gọn bằng ngôn ngữ của bài học.
+- "section_index": số thứ tự MỤC NỘI DUNG mà ảnh minh hoạ RÕ NHẤT (theo danh sách trên).
+  Nếu ảnh không khớp mục nào, để -1.
 Nếu không ảnh nào đáng giữ, trả về keep = []."""
 
 
@@ -111,7 +120,12 @@ def generate_images_one(doc, row: dict, content_entry: dict, client, images_dir,
         cands = _extract_candidates(doc, row["page_start"], row["page_end"])
         if cands:
             log(f"   [images ] {len(cands)} ảnh ứng viên, nhờ AI lọc...")
-            parts = [{"text": FILTER_PROMPT.format(topic_title=row["topic_title"])}]
+            secs = (content_entry or {}).get("sections") or []
+            sections_list = "\n".join(
+                f"{i}. {(s.get('heading') or '').strip()}" for i, s in enumerate(secs)
+            ) or "(bài chưa có mục nội dung — để section_index = -1)"
+            parts = [{"text": FILTER_PROMPT.format(topic_title=row["topic_title"],
+                                                   sections_list=sections_list)}]
             for c in cands:
                 parts.append(client.image_part(c["data"], c["mime"]))
             try:
@@ -122,8 +136,11 @@ def generate_images_one(doc, row: dict, content_entry: dict, client, images_dir,
                         c = cands[i]
                         fname = f"{slug}_{len(kept)+1:02d}.{c['ext']}"
                         (images_dir / fname).write_bytes(c["data"])
+                        si = k.get("section_index", -1)
+                        si = si if isinstance(si, int) else -1
                         kept.append({"file": fname, "caption": k["caption"],
-                                     "source": f"pdf_page_{c['page']}"})
+                                     "source": f"pdf_page_{c['page']}",
+                                     "section_index": si})
             except Exception as e:
                 warn(f"{slug}: lọc ảnh lỗi ({e}), bỏ qua ảnh PDF.")
     # Mindmap luôn được vẽ THÊM (0 token) — kể cả khi đã có ảnh gốc,

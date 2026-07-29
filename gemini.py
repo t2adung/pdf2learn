@@ -266,7 +266,9 @@ class MockGemini(Gemini):
             base["questions"] = self.generate_json(parts, schema, "questions")["questions"]
             return base
         if tag == "img_filter":
-            return {"keep": [{"index": 0, "caption": "Hình minh hoạ khái niệm chính (mock)"}]}
+            # section_index=0: chèn vào mục nội dung đầu tiên (không vào mục ảnh cuối)
+            return {"keep": [{"index": 0, "section_index": 0,
+                              "caption": "Hình minh hoạ khái niệm chính (mock)"}]}
         if tag == "questions":
             qs = []
             for i, kp in enumerate(["Khái niệm X", "Tính chất Y", "Ứng dụng X"], 1):

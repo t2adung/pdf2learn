@@ -103,6 +103,26 @@ def render(lo: dict, images: list = None, use_tables: bool = True,
     def _cap(items):
         return items[:mp] if mp > 0 else items
 
+    def _img_md(img):
+        cap = _line(img.get("caption", "")).replace("]", ")")
+        return f"![{cap}]({img['file']})"
+
+    # Phân loại ảnh: ảnh TRÍCH TỪ SÁCH (source pdf_page_*) được chèn vào ĐÚNG mục
+    # nội dung tương ứng (theo section_index do AI gán ở stage_images). Ảnh MINDMAP
+    # (code vẽ) mới đi vào mục "🖼️ Hình minh hoạ" cuối bài.
+    n_sections = len(lo.get("sections") or [])
+    book_by_section, book_unplaced, mindmap_imgs = {}, [], []
+    for img in (images or []):
+        if str(img.get("source", "")).startswith("pdf_page"):
+            si = img.get("section_index", -1)
+            si = si if isinstance(si, int) else -1
+            if 0 <= si < n_sections:
+                book_by_section.setdefault(si, []).append(img)
+            else:
+                book_unplaced.append(img)
+        else:
+            mindmap_imgs.append(img)
+
     p = []
 
     if lo.get("objectives") and "objectives" in keep:
@@ -139,14 +159,23 @@ def render(lo: dict, images: list = None, use_tables: bool = True,
                     p.append(f"  - *Ví dụ:* {_line(t['example'])}")
         p.append("")
 
+    show_imgs = "images" in keep
     if lo.get("sections") and "sections" in keep:
         p.append(H_MAIN)
-        for s in lo["sections"]:
+        for i, s in enumerate(lo["sections"]):
             p.append("")
             icon = _line(s.get("icon_hint", ""))
             head = f"{icon} " if icon else ""
             p.append(f"### {head}{_line(s.get('heading',''))}")
             p += _bullets(_cap(s.get("points") or []), mw)
+            # ảnh sách thuộc mục này -> chèn ngay dưới các ý của mục
+            if show_imgs:
+                for img in book_by_section.get(i, []):
+                    p.append(_img_md(img))
+        # ảnh sách không gán được mục nào -> để cuối phần Nội dung chính
+        if show_imgs and book_unplaced:
+            for img in book_unplaced:
+                p.append(_img_md(img))
         p.append("")
 
     if lo.get("real_life") and "real_life" in keep:
@@ -154,11 +183,17 @@ def render(lo: dict, images: list = None, use_tables: bool = True,
         p += _bullets(_cap(lo["real_life"]), mw)
         p.append("")
 
-    if images and "images" in keep:
+    # Mục "🖼️ Hình minh hoạ" cuối bài: CHỈ chứa ảnh mindmap (code vẽ). Ảnh sách
+    # đã được chèn vào các mục nội dung ở trên. Nếu bài không có mục nội dung nào
+    # (sections rỗng) thì ảnh sách chưa gắn được cũng gom vào đây để không mất.
+    sections_rendered = bool(lo.get("sections")) and "sections" in keep
+    final_imgs = list(mindmap_imgs)
+    if not sections_rendered:
+        final_imgs += book_unplaced + [im for lst in book_by_section.values() for im in lst]
+    if final_imgs and "images" in keep:
         p.append(H_IMAGES)
-        for img in images:
-            cap = _line(img.get("caption", "")).replace("]", ")")
-            p.append(f"![{cap}]({img['file']})")
+        for img in final_imgs:
+            p.append(_img_md(img))
         p.append("")
 
     # LUÔN là mục CUỐI CÙNG: chốt bài bằng câu trả lời cho hook đầu bài.
