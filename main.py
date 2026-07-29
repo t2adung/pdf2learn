@@ -74,6 +74,11 @@ def main():
                          "(giảm token mạnh; khuyến nghị 110 cho sách scan; 0 = tắt)")
     ap.add_argument("--redo-from", type=int, default=99, choices=range(1, 8),
                     metavar="N", help="xoá cache từ stage N trở đi rồi sinh lại")
+    ap.add_argument("--redo-content", action="store_true",
+                    help="sinh LẠI content (stage 3, gọi AI) + ảnh mindmap suy ra "
+                         "từ content (stage 4), nhưng GIỮ NGUYÊN câu hỏi (stage 5) "
+                         "và review (stage 6) đã có — 0 token cho câu hỏi. Dùng khi "
+                         "chỉ muốn làm mới bài học mà không sinh lại bộ câu hỏi.")
     ap.add_argument("--force-ai-toc", action="store_true",
                     help="bỏ qua bookmark PDF, luôn dùng AI trích mục lục")
     ap.add_argument("--fused", action="store_true",
@@ -143,6 +148,20 @@ def main():
         f_export_state.unlink()
         warn("Reset trạng thái batch export (các thư mục batch-* cũ đã lỗi thời, "
              "batch mới sẽ đánh số lại từ 01).")
+
+    # ---- --redo-content: sinh lại content (+ ảnh mindmap) nhưng GIỮ câu hỏi ----
+    # Chỉ xoá cache stage 3 (content) và 4 (ảnh — mindmap suy ra từ content nên
+    # phải vẽ lại cho khớp). Cache stage 5 (câu hỏi) và 6 (review) giữ nguyên =>
+    # không tốn token sinh lại câu hỏi. Câu hỏi cũ vẫn dùng key_points đời trước,
+    # đó chính là ý muốn: làm mới bài học mà không đụng bộ câu hỏi đã duyệt.
+    if args.redo_content:
+        for n in (3, 4):
+            if caches[n].exists():
+                caches[n].unlink()
+                log(f"♻️  --redo-content: xoá cache stage {n}: {caches[n].name}")
+        if images_dir.exists():
+            shutil.rmtree(images_dir)
+        log("   (GIỮ NGUYÊN câu hỏi stage 5 + review stage 6 — 0 token cho câu hỏi)")
 
     # ---- Stage 1: TOC ----
     if args.toc_file:

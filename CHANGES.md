@@ -11,6 +11,9 @@
   khởi động → Từ khoá → Nội dung chính → Liên hệ thực tế → Hình minh hoạ →
   Trả lời câu hỏi khởi động.
 - **`--limit N`**: chỉ xử lý N bài đầu rồi export CSV luôn (test nhanh bài 1-2).
+- **`--redo-content`**: sinh lại content (stage 3) + ảnh mindmap (stage 4) nhưng
+  GIỮ NGUYÊN câu hỏi (stage 5) + review (stage 6) — 0 token cho câu hỏi. Dùng khi
+  chỉ muốn làm mới bài học mà không sinh lại bộ câu hỏi đã duyệt.
 - Đổi schema ⇒ cache `03_content.json` cũ hết hợp lệ, chạy lại với `--redo-from 3`.
 
 ## Cài đặt lần đầu (macOS / Linux)
