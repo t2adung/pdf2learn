@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
-"""test_images.py — Nghiệm thu "phần A": trích hình sách theo vùng + caption
-thật + gán mục bằng code. Dựng PDF tổng hợp trong bộ nhớ, KHÔNG gọi API. 0 token.
+"""test_images.py — Nghiệm thu: đính kèm NGUYÊN TRANG sách + gán mỗi trang vào
+đúng mục nội dung bằng code. Dựng PDF tổng hợp trong bộ nhớ, KHÔNG gọi API. 0 token.
 Chạy: python3 test_images.py
 """
-import os
 import sys
 import tempfile
 from pathlib import Path
 
 import fitz
 
-from stage_images import (_caption_near, _content_words, _match_section,
-                          _text_lines, generate_images_one)
+from stage_images import _content_words, _match_section, generate_images_one
 
 fails = []
 
@@ -22,38 +20,6 @@ def check(name, cond, detail=""):
         fails.append(name)
 
 
-def _noisy_png(w=300, h=220):
-    """Ảnh nhiễu ngẫu nhiên -> PNG đủ lớn (>6KB) để qua ngưỡng MIN_BYTES."""
-    pix = fitz.Pixmap(fitz.csRGB, w, h, os.urandom(w * h * 3), False)
-    return pix.tobytes("png")
-
-
-def _build_pdf(path):
-    """1 trang A4: heading mục 1 (trên), 1 hình có caption 'Hình 1...' ngay dưới,
-    và text của mục 2 ở cuối trang (xa hình)."""
-    doc = fitz.open()
-    page = doc.new_page(width=595, height=842)
-    # Mục 1 — ngay phía trên hình
-    page.insert_text((90, 120), "1. Cau tao nguyen tu", fontsize=14)
-    page.insert_text((90, 140),
-                     "Nguyen tu gom hat nhan mang dien duong va cac electron.",
-                     fontsize=11)
-    # Hình đặt tại vùng (90,150)-(390,370)
-    rect = fitz.Rect(90, 150, 390, 370)
-    page.insert_image(rect, stream=_noisy_png())
-    # Caption THẬT ngay dưới hình
-    page.insert_text((90, 386),
-                     "Hinh 1. Mo hinh nguyen tu gom hat nhan va electron",
-                     fontsize=11)
-    # Mục 2 — cuối trang, xa hình
-    page.insert_text((90, 720), "2. Bang tuan hoan cac nguyen to", fontsize=14)
-    page.insert_text((90, 740),
-                     "Sap xep nguyen to hoa hoc theo so proton tang dan.",
-                     fontsize=11)
-    doc.save(path)
-    doc.close()
-
-
 SECTIONS = [
     {"heading": "Cau tao nguyen tu",
      "points": ["Nguyen tu gom hat nhan va electron",
@@ -62,50 +28,71 @@ SECTIONS = [
      "points": ["Sap xep theo so proton", "Chu ki va nhom"]},
 ]
 
+
+def _build_pdf(path):
+    """2 trang: trang 1 = nội dung mục 0, trang 2 = nội dung mục 1."""
+    doc = fitz.open()
+    p1 = doc.new_page(width=595, height=842)
+    p1.insert_text((72, 100), "1. Cau tao nguyen tu", fontsize=16)
+    p1.insert_text((72, 130),
+                   "Nguyen tu gom hat nhan mang dien duong va cac electron.",
+                   fontsize=12)
+    p2 = doc.new_page(width=595, height=842)
+    p2.insert_text((72, 100), "2. Bang tuan hoan cac nguyen to", fontsize=16)
+    p2.insert_text((72, 130),
+                   "Sap xep nguyen to hoa hoc theo so proton, thanh chu ki va nhom.",
+                   fontsize=12)
+    doc.save(path)
+    doc.close()
+
+
 tmp = Path(tempfile.mkdtemp())
 pdf_path = tmp / "syn.pdf"
 _build_pdf(str(pdf_path))
+
+# --- 1. khớp trang -> mục theo text ---
 doc = fitz.open(str(pdf_path))
-page = doc[0]
+check("trang 1 khớp mục 0", _match_section(doc[0].get_text(), SECTIONS) == 0)
+check("trang 2 khớp mục 1", _match_section(doc[1].get_text(), SECTIONS) == 1)
+check("text rỗng (scan) -> -1 (sẽ fallback theo thứ tự)",
+      _match_section("", SECTIONS) == -1)
 
-# --- 1. dò caption thật ---
-lines = _text_lines(page)
-rect = None
-for info in page.get_images(full=True):
-    rs = page.get_image_rects(info[0])
-    if rs:
-        rect = rs[0]
-cap = _caption_near(rect, lines) if rect else ""
-check("lấy được caption THẬT bắt đầu bằng 'Hinh 1'", cap.lower().startswith("hinh 1"), repr(cap))
-
-# --- 2. gán mục bằng code ---
-si = _match_section(cap, "", SECTIONS)
-check("caption khớp ĐÚNG mục 0 (Cau tao nguyen tu)", si == 0, f"section_index={si}")
-si_wrong = _match_section("Hinh 2. Bang tuan hoan cac nguyen to hoa hoc", "", SECTIONS)
-check("caption khác khớp mục 1 (Bang tuan hoan)", si_wrong == 1, f"section_index={si_wrong}")
-
-# --- 3. end-to-end generate_images_one (book_images=True, 0 token) ---
+# --- 2. end-to-end: đính NGUYÊN TRANG, gán đúng mục, 0 token ---
 row = {"topic_slug": "syn-bai-1", "topic_title": "Nguyen tu",
-       "page_start": 1, "page_end": 1}
-content_entry = {"sections": SECTIONS}   # không có mindmap -> chỉ có hình sách
+       "page_start": 1, "page_end": 2}
 imgs_dir = tmp / "images"
-kept = generate_images_one(doc, row, content_entry, client=None,
+kept = generate_images_one(doc, row, {"sections": SECTIONS}, client=None,
                            images_dir=imgs_dir, book_images=True)
 doc.close()
 
 book = [k for k in kept if str(k.get("source", "")).startswith("pdf_page")]
-check("trích được đúng 1 hình sách", len(book) == 1, f"{len(book)} hình")
-if book:
-    b = book[0]
-    check("hình sách gắn source=pdf_page_1", b["source"] == "pdf_page_1", b["source"])
-    check("hình sách gán vào mục 0", b.get("section_index") == 0, str(b.get("section_index")))
-    check("caption hình sách là caption thật", b["caption"].lower().startswith("hinh 1"), b["caption"])
-    check("file ảnh đã ghi ra đĩa", (imgs_dir / b["file"]).exists(), b["file"])
-    check("ảnh render là PNG", b["file"].endswith(".png"), b["file"])
+check("đính đúng 2 trang sách", len(book) == 2, f"{len(book)} trang")
+by_page = {k["source"]: k for k in book}
+check("trang 1 -> mục 0", by_page.get("pdf_page_1", {}).get("section_index") == 0,
+      str(by_page.get("pdf_page_1")))
+check("trang 2 -> mục 1", by_page.get("pdf_page_2", {}).get("section_index") == 1,
+      str(by_page.get("pdf_page_2")))
+check("ảnh trang là PNG, đã ghi ra đĩa",
+      all(k["file"].endswith(".png") and (imgs_dir / k["file"]).exists() for k in book))
+check("caption ghi rõ số trang", by_page.get("pdf_page_1", {}).get("caption", "").startswith("Trang 1"))
 
-# --- 4. so khớp từ nội dung bỏ từ dừng ---
-w = _content_words("Hình 1. Mô hình nguyên tử gồm hạt nhân")
-check("_content_words bỏ từ dừng 'hình'/'của'", "hình" not in w and "nguyên" in w, str(sorted(w)))
+# --- 3. sách scan (không text) -> fallback ánh xạ theo thứ tự trang ---
+doc2 = fitz.open()
+doc2.new_page(width=400, height=560)   # trang trắng, không text layer
+doc2.new_page(width=400, height=560)
+row2 = {"topic_slug": "scan-bai", "topic_title": "X", "page_start": 1, "page_end": 2}
+kept2 = generate_images_one(doc2, row2, {"sections": SECTIONS}, client=None,
+                            images_dir=tmp / "images2", book_images=True)
+doc2.close()
+book2 = [k for k in kept2 if str(k.get("source", "")).startswith("pdf_page")]
+check("scan: vẫn đính đủ 2 trang", len(book2) == 2, f"{len(book2)} trang")
+si2 = [k["section_index"] for k in sorted(book2, key=lambda k: k["source"])]
+check("scan: ánh xạ theo thứ tự (trang1->mục0, trang2->mục1)", si2 == [0, 1], str(si2))
+
+# --- 4. _content_words bỏ từ dừng ---
+w = _content_words("Trang 1 - Hình nguyên tử của hạt nhân")
+check("_content_words bỏ 'trang'/'hình'/'của'",
+      "trang" not in w and "hình" not in w and "nguyên" in w, str(sorted(w)))
 
 print()
 if fails:

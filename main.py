@@ -296,7 +296,8 @@ def main():
             if not args.no_images and slug not in images:
                 images[slug] = generate_images_one(doc, row, content[slug],
                                                    client, images_dir,
-                                                   book_images=args.book_images)
+                                                   book_images=args.book_images,
+                                                   page_dpi=args.dpi)
                 save_json(caches[4], images)
             if slug not in questions:
                 qs, dropped = generate_questions_one(row, content[slug], client,
