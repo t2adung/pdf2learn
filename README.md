@@ -29,7 +29,17 @@ python main.py sach.pdf --level "Lớp 6" --no-images
 # 4. Có thẩm định chéo bởi model thứ hai:
 export GROQ_API_KEY=gsk_...          # free: https://console.groq.com
 python main.py sach.pdf --level "Lớp 6" --review
+
+# 5. Dùng SUBSCRIPTION Claude Max/Pro thay API key (0đ phụ trội, không cần GEMINI_API_KEY):
+#    cần: đã cài Claude Code + `claude login` (Max/Pro)
+python main.py sach.pdf --level "Lớp 6" --backend claude
 ```
+
+> **`--backend claude`**: gọi Claude Code CLI (`claude -p`) trên máy, dùng đúng gói
+> subscription — **không tính tiền theo token**, chỉ ăn hạn mức. Hết hạn mức thì
+> pipeline dừng và export phần hoàn chỉnh (thoát mã 42); chạy lại chính lệnh khi cửa
+> sổ reset để resume. Với backend này nên dùng bookmark/`--toc-file` cho mục lục
+> (tránh giới hạn số trang khi Claude đọc cả cuốn).
 
 ## Kết quả (`runs/<tên-pdf>/output/`)
 
@@ -76,6 +86,7 @@ rõ, export partial rồi thoát — quota reset ~14-15h chiều giờ VN.
 |---|---|
 | `--level "Lớp 6"` | Giá trị cột `level` (mặc định "Lớp 6") |
 | `--limit N` | CHỈ xử lý N bài ĐẦU rồi export CSV luôn (vd `--limit 2` để test nhanh bài 1-2). 0 = làm hết. Cache giữ nguyên: bỏ cờ này chạy lại sẽ làm tiếp phần còn lại |
+| `--backend gemini\|claude` | Nguồn AI. `gemini` (mặc định, cần `GEMINI_API_KEY`) hoặc `claude` (Claude Code CLI `claude -p`, dùng **subscription** Max/Pro — 0đ phụ trội, cần `claude login`). Hết hạn mức → thoát mã 42, chạy lại để resume |
 | `--dry-run` | MockGemini, không cần API key — kiểm tra pipeline & format output |
 | `--no-images` | Bỏ stage ảnh: −1..2 request/topic (~30%), lấy ảnh sau bằng cách chạy lại bỏ cờ này |
 | `--book-images` | Đính kèm **NGUYÊN TRANG sách** (không cắt hình) — **0 token, thuần code**: render từng trang trong page range ra PNG, rồi **gắn mỗi trang vào đúng mục nội dung** (khớp text trang với heading/points; sách scan không có text → ánh xạ theo thứ tự trang). Ảnh trang nằm trong mục "Nội dung chính"; mục "🖼️ Hình minh hoạ" cuối bài chỉ còn ảnh mindmap. Kèm `--dpi N` để render grayscale gọn cho sách scan. Mặc định TẮT: chỉ giữ mindmap SVG |

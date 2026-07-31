@@ -1,5 +1,20 @@
 # pdf2learn v2 — Content chuyển từ Markdown blob sang Learning Object JSON
 
+## Backend Claude subscription (`--backend claude`)
+
+- **Thêm nguồn AI dùng SUBSCRIPTION Claude Max/Pro** qua Claude Code CLI (`claude -p`)
+  — file mới `claude_cli.py` (`ClaudeCLI`, cùng interface `gemini.Gemini`). Không cần
+  API key, **không tính tiền theo token** (chỉ ăn hạn mức subscription). PDF/ảnh ghi
+  ra file tạm cho Claude đọc bằng Read; structured JSON ép bằng prompt + parse (+1 lần
+  tự sửa nếu hỏng).
+- `main.py`: cờ `--backend {gemini,claude}` (mặc định gemini); tự đổi `--model` sang
+  model Claude (`sonnet`) khi chọn claude; reviewer chéo bằng ClaudeCLI (`opus`).
+- **Hết hạn mức** → `ClaudeLimitError`: pipeline dừng, export phần hoàn chỉnh, **thoát
+  mã 42** (để runner tự động phân biệt "tạm dừng, chờ reset" với hoàn tất/ lỗi thật);
+  chạy lại chính lệnh khi cửa sổ reset để resume theo topic.
+- Test: `test_claude_cli.py` (monkeypatch `subprocess.run`, 0 chi phí, không cần
+  lệnh `claude` thật).
+
 ## Cập nhật schema bài học (mới nhất)
 
 - **Thêm mục cuối `✅ Trả lời câu hỏi khởi động`** (field `hook_answer`): chốt

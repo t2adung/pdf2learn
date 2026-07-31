@@ -44,6 +44,11 @@ def main():
                          "test nhanh chất lượng bài 1,2 trước khi chạy cả sách "
                          "(vd --limit 2). 0 = làm hết. Cache giữ nguyên nên chạy "
                          "lại bỏ cờ này sẽ làm tiếp các topic còn lại.")
+    ap.add_argument("--backend", default="gemini", choices=["gemini", "claude"],
+                    help="nguồn AI: gemini (REST API, cần GEMINI_API_KEY — mặc định) "
+                         "hoặc claude (gọi Claude Code CLI `claude -p`, dùng SUBSCRIPTION "
+                         "Max/Pro, KHÔNG cần API key, KHÔNG tính tiền theo token). "
+                         "claude cần đã cài Claude Code + `claude login`.")
     ap.add_argument("--model", default="gemini-2.5-flash")
     ap.add_argument("--density", default="full",
                     choices=["full", "compact", "minimal"],
@@ -118,11 +123,19 @@ def main():
         from gemini import MockGemini
         client = MockGemini()
         log("🧪 DRY-RUN: dùng MockGemini (không gọi API thật).")
+    elif args.backend == "claude":
+        from claude_cli import CLAUDE_DEFAULT_MODEL, ClaudeCLI
+        # --model mặc định là của Gemini -> chuyển sang model Claude mặc định.
+        model = CLAUDE_DEFAULT_MODEL if args.model.startswith("gemini") else args.model
+        client = ClaudeCLI(model=model, interval=args.interval)
+        log(f"🟣 Backend CLAUDE (subscription qua `claude -p`, model={model}). "
+            "Không cần API key.")
     else:
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         if not api_key:
             sys.exit("Thiếu GEMINI_API_KEY. Lấy key miễn phí tại https://aistudio.google.com "
-                     "rồi: export GEMINI_API_KEY=...  (hoặc chạy --dry-run để test)")
+                     "rồi: export GEMINI_API_KEY=...  (hoặc chạy --dry-run để test, "
+                     "hoặc --backend claude để dùng subscription Claude)")
         from gemini import Gemini
         client = Gemini(api_key, model=args.model, interval=args.interval)
 
@@ -261,6 +274,7 @@ def main():
     #  hết quota giữa chừng vẫn có N topic HOÀN CHỈNH để export)
     import fitz
     from gemini import GeminiError
+    from claude_cli import ClaudeError, ClaudeLimitError
     from stage_content import generate_content_one
     from stage_images import generate_images_one
     from stage_questions import generate_questions_one
@@ -278,6 +292,7 @@ def main():
 
     doc = fitz.open(args.pdf)
     aborted = None
+    aborted_limit = False
     total = len(structure)
     for idx, row in enumerate(structure, 1):
         slug = row["topic_slug"]
@@ -311,8 +326,9 @@ def main():
                 review[slug] = review_one(row, content[slug],
                                           questions.get(slug, []), reviewer, wp)
                 save_json(caches[6], review)
-        except GeminiError as e:
+        except (GeminiError, ClaudeError) as e:
             aborted = str(e)
+            aborted_limit = isinstance(e, (ClaudeLimitError,)) or "QUOTA" in str(e).upper()
             warn(f"Dừng tại topic {idx}/{total} ({slug}): {e}")
             warn(f"Đã hoàn chỉnh {idx-1} topic — vẫn export phần này. "
                  "Chạy lại CHÍNH LỆNH CŨ để tiếp tục từ topic dở dang.")
@@ -384,6 +400,15 @@ def main():
         write_report(review, structure, out_dir / "review_report.md")
         log(f"   review_report.md : báo cáo thẩm định (đọc trước khi import!)")
     _report_usage([client, reviewer], work / "usage.json")
+
+    # Bị dừng vì HẾT HẠN MỨC (Claude subscription / quota Gemini) và còn topic dở:
+    # thoát mã 42 để runner tự động (watch_drive.py — Phần B) biết là "tạm dừng, chờ
+    # reset rồi chạy tiếp", phân biệt với hoàn tất (0) hay lỗi thật (1).
+    if aborted_limit and len(completed) < len(structure):
+        warn("⏸  Tạm dừng vì hết hạn mức — đã export phần hoàn chỉnh. "
+             "Chạy lại chính lệnh này khi cửa sổ reset để tiếp tục.")
+        sys.exit(42)
+
     log("\n✅ Hoàn tất. Import thử topics.csv + multichoice.csv, "
         "upload thư mục images/ theo manifest.json.")
 
@@ -427,6 +452,13 @@ def _build_reviewer(args, gemini_client):
     """Trả về (reviewer_client, with_pdf: bool — reviewer có đọc được PDF không)."""
     if args.dry_run:
         return gemini_client, False  # MockGemini tự xử lý tag "review"
+    if args.backend == "claude":
+        # Backend Claude: reviewer là 1 ClaudeCLI model khác (opus) để "chéo model".
+        # Đọc được PDF gốc qua Read -> with_pdf=True. Không dùng nhánh gemini-pro
+        # (cần GEMINI_API_KEY) khi đang chạy subscription Claude.
+        from claude_cli import ClaudeCLI
+        rv_model = "opus" if args.model in ("sonnet", "gemini-2.5-flash") else "sonnet"
+        return ClaudeCLI(model=rv_model, interval=args.interval), True
     if args.reviewer == "gemini-pro":
         from gemini import Gemini
         rv = Gemini(gemini_client.api_key, model="gemini-2.5-pro",
