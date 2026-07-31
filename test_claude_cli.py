@@ -33,8 +33,8 @@ captured = {}
 
 
 def run_ok(cmd, input=None, capture_output=True, text=True, timeout=None):
-    captured["prompt"] = input
     captured["cmd"] = cmd
+    captured["prompt"] = cmd[2] if len(cmd) > 2 else ""   # prompt là tham số sau -p
     env = {"type": "result", "is_error": False,
            "result": '{"a": 1, "b": ["x", "y"]}',
            "usage": {"input_tokens": 123, "output_tokens": 45}}
@@ -48,11 +48,14 @@ res = c.generate_json(parts, {"type": "object"}, tag="content")
 check("generate_json trả dict đã parse", res == {"a": 1, "b": ["x", "y"]}, str(res))
 check("usage ghi nhận input/output tokens",
       c.usage.get("content") == {"calls": 1, "in": 123, "out": 45}, str(c.usage))
+check("prompt truyền LÀM THAM SỐ (claude -p <prompt>)",
+      captured["cmd"][:2] == ["claude", "-p"] and captured["prompt"],
+      str(captured["cmd"][:3]))
 check("prompt có chèn đường dẫn file để Read", "bai-1.pdf" in captured["prompt"])
 check("prompt có chèn schema JSON", '"type": "object"' in captured["prompt"]
       or '"type":"object"' in captured["prompt"])
-check("cmd gọi claude -p --output-format json",
-      captured["cmd"][:4] == ["claude", "-p", "--output-format", "json"], str(captured["cmd"]))
+check("cmd có --output-format json",
+      "--output-format" in captured["cmd"] and "json" in captured["cmd"], str(captured["cmd"]))
 check("cmd có --add-dir (cấp quyền đọc thư mục tạm)", "--add-dir" in captured["cmd"])
 
 

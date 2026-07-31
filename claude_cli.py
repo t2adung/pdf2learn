@@ -132,12 +132,15 @@ class ClaudeCLI:
 
     # ---------- gọi CLI ----------
     def _run(self, prompt: str) -> dict:
-        cmd = ["claude", "-p", "--output-format", "json",
+        # Prompt truyền LÀM THAM SỐ (claude -p "<prompt>") — ổn định hơn stdin và
+        # khớp cách test tay. Prompt chỉ có text + đường dẫn file + schema (PDF là
+        # file tham chiếu, KHÔNG nhúng) nên luôn nhỏ, không lo giới hạn độ dài argv.
+        cmd = ["claude", "-p", prompt, "--output-format", "json",
                "--model", self.model,
                "--allowedTools", "Read",
                "--add-dir", self._tmp]
         try:
-            proc = subprocess.run(cmd, input=prompt, capture_output=True,
+            proc = subprocess.run(cmd, capture_output=True,
                                   text=True, timeout=self.timeout)
         except FileNotFoundError:
             raise ClaudeError("Không chạy được lệnh `claude` (chưa cài Claude Code?).")
