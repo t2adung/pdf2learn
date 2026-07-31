@@ -78,7 +78,7 @@ rõ, export partial rồi thoát — quota reset ~14-15h chiều giờ VN.
 | `--limit N` | CHỈ xử lý N bài ĐẦU rồi export CSV luôn (vd `--limit 2` để test nhanh bài 1-2). 0 = làm hết. Cache giữ nguyên: bỏ cờ này chạy lại sẽ làm tiếp phần còn lại |
 | `--dry-run` | MockGemini, không cần API key — kiểm tra pipeline & format output |
 | `--no-images` | Bỏ stage ảnh: −1..2 request/topic (~30%), lấy ảnh sau bằng cách chạy lại bỏ cờ này |
-| `--book-images` | Nhúng THÊM ảnh trích từ trang PDF (AI lọc, +1 request/topic). Ảnh sách được chèn vào ĐÚNG mục nội dung tương ứng (AI gán mục ngay trong cùng request lọc — **không tốn thêm request**); mục "🖼️ Hình minh hoạ" cuối bài chỉ còn ảnh mindmap. Mặc định TẮT: chỉ giữ mindmap SVG do code vẽ (0 token) |
+| `--book-images` | Đính kèm **NGUYÊN TRANG sách** (không cắt hình) — **0 token, thuần code**: render từng trang trong page range ra PNG, rồi **gắn mỗi trang vào đúng mục nội dung** (khớp text trang với heading/points; sách scan không có text → ánh xạ theo thứ tự trang). Ảnh trang nằm trong mục "Nội dung chính"; mục "🖼️ Hình minh hoạ" cuối bài chỉ còn ảnh mindmap. Kèm `--dpi N` để render grayscale gọn cho sách scan. Mặc định TẮT: chỉ giữ mindmap SVG |
 | `--no-validate` | Bỏ pass tự giải kiểm chứng đáp án (không khuyến nghị) |
 | `--review` | Bật stage 6: model thứ hai thẩm định content + câu hỏi |
 | `--reviewer X` | `groq` (Llama 70B, độc lập nhà cung cấp — mặc định) / `openrouter` (DeepSeek R1) / `gemini-pro` (duy nhất đối chiếu được PDF gốc) |
