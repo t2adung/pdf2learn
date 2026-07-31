@@ -24,13 +24,8 @@
 ## 🌍 Liên hệ thực tế
 - Album ảnh cũ của ông bà ghi lại lịch sử của gia đình em.
 
-## ⚠️ Dễ nhầm lẫn
-| Nhiều bạn nghĩ | Thực ra |
-| --- | --- |
-| Lịch sử chỉ là chuyện vua chúa, chiến tranh. | Lịch sử là mọi thứ đã xảy ra, kể cả việc em học lớp 5 năm ngoái. |
-
-## 💡 Mẹo nhớ
-- Lịch sử = ĐÃ + XẢY RA. Đã xảy ra rồi thì là lịch sử, dù mới hôm qua.
-
 ## 🖼️ Hình minh hoạ
 ![Sơ đồ tư duy](ls-bai-1_01.svg)
+
+## ✅ Trả lời câu hỏi khởi động
+> Vì công nghệ thay đổi liên tục — đó chính là lịch sử của chiếc điện thoại.

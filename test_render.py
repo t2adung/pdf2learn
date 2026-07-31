@@ -41,10 +41,7 @@ LO = {
              "children": ["Hiểu nguồn gốc", "Hiểu hiện tại", "Định hướng tương lai"]},
         ]},
     "real_life": ["Album ảnh cũ của ông bà ghi lại lịch sử của gia đình em."],
-    "memory_hooks": ["Lịch sử = ĐÃ + XẢY RA. Đã xảy ra rồi thì là lịch sử, dù mới hôm qua."],
-    "misconceptions": [
-        {"wrong": "Lịch sử chỉ là chuyện vua chúa, chiến tranh.",
-         "correct": "Lịch sử là mọi thứ đã xảy ra, kể cả việc em học lớp 5 năm ngoái."}],
+    "hook_answer": "Vì công nghệ thay đổi liên tục — đó chính là lịch sử của chiếc điện thoại.",
     "key_points": ["Lịch sử là tất cả những gì đã xảy ra trong quá khứ."],
 }
 
@@ -76,6 +73,14 @@ check("có heading Mục tiêu", "## 🎯 Mục tiêu" in md)
 check("hook nằm trong blockquote", "\n> Chiếc điện thoại" in md)
 check("ảnh tham chiếu filename trần", "![Sơ đồ tư duy](ls-bai-1_01.svg)" in md)
 
+# TRẢ LỜI CÂU HỎI KHỞI ĐỘNG: LUÔN là mục cuối cùng
+check("có heading Trả lời câu hỏi khởi động", "## ✅ Trả lời câu hỏi khởi động" in md)
+heads = [l for l in md.splitlines() if l.startswith("## ")]
+check("Trả lời câu hỏi khởi động là mục CUỐI CÙNG",
+      heads and heads[-1] == "## ✅ Trả lời câu hỏi khởi động", str(heads[-1:]))
+check("KHÔNG còn mục Dễ nhầm lẫn / Mẹo nhớ / Bảng so sánh",
+      "Dễ nhầm lẫn" not in md and "Mẹo nhớ" not in md and "Bảng so sánh" not in md)
+
 # BẪY: bảng markdown phải còn đúng 3 cột
 tbl = [l for l in md.splitlines() if l.startswith("|") and "Quá khứ" in l]
 check("dòng bảng có dấu | được escape", len(tbl) == 1 and tbl[0].count("\\|") == 2, str(tbl))
@@ -83,6 +88,24 @@ check("dòng bảng có dấu | được escape", len(tbl) == 1 and tbl[0].count
 raw = tbl[0].replace("\\|", "")
 check("dòng bảng vẫn đúng 3 cột", raw.count("|") == 4, f"{raw.count('|')} thanh dọc")
 check("xuống dòng trong ô đã bị làm phẳng", "Mốc chia theo thời gian" in md)
+
+# --- 2b. ảnh sách chèn vào mục nội dung; mục Hình minh hoạ chỉ giữ mindmap ---
+md_img = render(LO, images=[
+    {"file": "ls-bai-1_01.png", "caption": "Ảnh sách mục 1",
+     "source": "pdf_page_5", "section_index": 0},          # -> mục nội dung 0
+    {"file": "ls-bai-1_99.svg", "caption": "Sơ đồ tư duy",
+     "source": "code_mindmap"},                             # -> mục Hình minh hoạ
+])
+lines = md_img.splitlines()
+i_sec0 = lines.index("### Mọi thứ đều thay đổi theo thời gian")
+i_sec1 = lines.index("### Vì sao cần học lịch sử?")
+i_book = lines.index("![Ảnh sách mục 1](ls-bai-1_01.png)")
+i_imghead = lines.index("## 🖼️ Hình minh hoạ")
+i_mind = lines.index("![Sơ đồ tư duy](ls-bai-1_99.svg)")
+check("ảnh sách nằm TRONG mục nội dung tương ứng (không xuống mục Hình minh hoạ)",
+      i_sec0 < i_book < i_sec1 and i_book < i_imghead, f"book@{i_book}")
+check("mục Hình minh hoạ CHỈ chứa mindmap", i_imghead < i_mind
+      and "ls-bai-1_01.png" not in md_img.split("## 🖼️ Hình minh hoạ")[1])
 
 # --- 3. sống sót qua CSV round-trip ---
 buf = io.StringIO()
@@ -95,7 +118,8 @@ check("markdown sống sót round-trip CSV", back == md)
 
 # --- 4. bản không dùng bảng (nếu bibeli tắt table) ---
 md2 = render(LO, use_tables=False)
-check("use_tables=False không sinh bảng", "| --- |" not in md2 and "❌" in md2)
+check("use_tables=False không sinh bảng key_terms",
+      "| --- |" not in md2 and "**Lịch sử**: Tất cả" in md2)
 
 print()
 if fails:

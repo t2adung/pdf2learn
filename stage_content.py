@@ -5,7 +5,7 @@ Thay đổi cốt lõi so với v1:
 - v1: AI trả về 1 blob "content_markdown" => format do AI quyết, khó kiểm soát,
   muốn đổi layout phải sinh lại (tốn token).
 - v2: AI CHỈ trả về DỮ LIỆU CÓ CẤU TRÚC (objectives, key_terms, sections,
-  mindmap, misconceptions...). Cú pháp Markdown/SVG do CODE sinh
+  mindmap, hook_answer...). Cú pháp Markdown/SVG do CODE sinh
   (render_markdown.py + mindmap_svg.py) => 0 token cho khâu format,
   đổi layout chỉ cần re-render từ cache, không gọi lại AI.
 
@@ -58,15 +58,7 @@ CONTENT_SCHEMA = {
             "required": ["root", "branches"],
         },
         "real_life": {"type": "array", "items": {"type": "string"}},
-        "memory_hooks": {"type": "array", "items": {"type": "string"}},
-        "misconceptions": {"type": "array", "items": {
-            "type": "object",
-            "properties": {
-                "wrong": {"type": "string"},
-                "correct": {"type": "string"},
-            },
-            "required": ["wrong", "correct"],
-        }},
+        "hook_answer": {"type": "string"},
         "key_points": {"type": "array", "items": {"type": "string"}},
     },
     "required": ["objectives", "sections", "mindmap", "key_points"],
@@ -101,8 +93,9 @@ NHÓM PHẢI BÁM SÁT TÀI LIỆU (tuyệt đối không bịa thêm số liệ
 NHÓM ĐƯỢC PHÉP BỔ SUNG kiến thức ngoài tài liệu (phù hợp trình độ "{level}"):
 - "hook": 1 câu hỏi khởi động gây tò mò, gắn đời sống (<= 30 từ).
 - "real_life": 1-2 ví dụ ứng dụng thực tế (mỗi ví dụ <= 20 từ).
-- "memory_hooks": 1-2 mẹo ghi nhớ ngắn.
-- "misconceptions": 1-2 cặp hiểu-lầm (wrong) và đính chính (correct), mỗi vế <= 20 từ."""
+- "hook_answer": câu TRẢ LỜI trực tiếp cho chính câu hỏi "hook" ở trên, dùng
+  kiến thức vừa học để chốt lại bài (<= 40 từ, 1-2 câu). BẮT BUỘC phải khớp và
+  giải đáp đúng câu hỏi trong "hook", không lạc đề."""
 
 
 def cut_pages(doc: fitz.Document, page_start: int, page_end: int,
@@ -146,7 +139,6 @@ def generate_content_one(doc: fitz.Document, row: dict, client, dpi: int = 0) ->
         [client.pdf_part(sub_pdf, f"{slug}.pdf"), {"text": prompt}],
         CONTENT_SCHEMA, tag="content")
     # dọn field rỗng để render sạch
-    for k in ("objectives", "key_terms", "sections", "real_life",
-              "memory_hooks", "misconceptions", "key_points"):
+    for k in ("objectives", "key_terms", "sections", "real_life", "key_points"):
         lo[k] = [x for x in (lo.get(k) or []) if x]
     return lo

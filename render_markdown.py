@@ -32,9 +32,8 @@ H_HOOK = "## 🤔 Câu hỏi khởi động"
 H_TERMS = "## 🔑 Từ khoá cần nhớ"
 H_MAIN = "## 📚 Nội dung chính"
 H_REAL = "## 🌍 Liên hệ thực tế"
-H_MISC = "## ⚠️ Dễ nhầm lẫn"
-H_HOOKS = "## 💡 Mẹo nhớ"
 H_IMAGES = "## 🖼️ Hình minh hoạ"
+H_HOOK_ANSWER = "## ✅ Trả lời câu hỏi khởi động"
 
 
 def _cell(s: str) -> str:
@@ -81,14 +80,14 @@ def _trim(s: str, max_words: int) -> str:
 #   compact : mỗi section tối đa 3 point, point dài cắt còn 22 từ; bỏ ví dụ ở
 #             key_terms; giữ đủ section
 #   minimal : chỉ Mục tiêu + Nội dung chính (2 point/section, 18 từ) + Mindmap.
-#             Các phần Liên hệ/Dễ nhầm/Mẹo nhớ ẩn đi (đọc nhanh, ôn tập)
+#             Các phần Liên hệ/Trả lời khởi động ẩn đi (đọc nhanh, ôn tập)
 DENSITY = {
     "full":    {"max_points": 0, "max_words": 0,  "term_example": True,
                 "keep": {"objectives", "hook", "key_terms", "sections",
-                         "real_life", "misconceptions", "memory_hooks", "images"}},
+                         "real_life", "images", "hook_answer"}},
     "compact": {"max_points": 3, "max_words": 22, "term_example": False,
                 "keep": {"objectives", "hook", "key_terms", "sections",
-                         "real_life", "misconceptions", "memory_hooks", "images"}},
+                         "real_life", "images", "hook_answer"}},
     "minimal": {"max_points": 2, "max_words": 18, "term_example": False,
                 "keep": {"objectives", "sections", "images"}},
 }
@@ -103,6 +102,26 @@ def render(lo: dict, images: list = None, use_tables: bool = True,
 
     def _cap(items):
         return items[:mp] if mp > 0 else items
+
+    def _img_md(img):
+        cap = _line(img.get("caption", "")).replace("]", ")")
+        return f"![{cap}]({img['file']})"
+
+    # Phân loại ảnh: ảnh TRÍCH TỪ SÁCH (source pdf_page_*) được chèn vào ĐÚNG mục
+    # nội dung tương ứng (theo section_index do AI gán ở stage_images). Ảnh MINDMAP
+    # (code vẽ) mới đi vào mục "🖼️ Hình minh hoạ" cuối bài.
+    n_sections = len(lo.get("sections") or [])
+    book_by_section, book_unplaced, mindmap_imgs = {}, [], []
+    for img in (images or []):
+        if str(img.get("source", "")).startswith("pdf_page"):
+            si = img.get("section_index", -1)
+            si = si if isinstance(si, int) else -1
+            if 0 <= si < n_sections:
+                book_by_section.setdefault(si, []).append(img)
+            else:
+                book_unplaced.append(img)
+        else:
+            mindmap_imgs.append(img)
 
     p = []
 
@@ -140,14 +159,23 @@ def render(lo: dict, images: list = None, use_tables: bool = True,
                     p.append(f"  - *Ví dụ:* {_line(t['example'])}")
         p.append("")
 
+    show_imgs = "images" in keep
     if lo.get("sections") and "sections" in keep:
         p.append(H_MAIN)
-        for s in lo["sections"]:
+        for i, s in enumerate(lo["sections"]):
             p.append("")
             icon = _line(s.get("icon_hint", ""))
             head = f"{icon} " if icon else ""
             p.append(f"### {head}{_line(s.get('heading',''))}")
             p += _bullets(_cap(s.get("points") or []), mw)
+            # ảnh sách thuộc mục này -> chèn ngay dưới các ý của mục
+            if show_imgs:
+                for img in book_by_section.get(i, []):
+                    p.append(_img_md(img))
+        # ảnh sách không gán được mục nào -> để cuối phần Nội dung chính
+        if show_imgs and book_unplaced:
+            for img in book_unplaced:
+                p.append(_img_md(img))
         p.append("")
 
     if lo.get("real_life") and "real_life" in keep:
@@ -155,29 +183,23 @@ def render(lo: dict, images: list = None, use_tables: bool = True,
         p += _bullets(_cap(lo["real_life"]), mw)
         p.append("")
 
-    if lo.get("misconceptions") and "misconceptions" in keep:
-        p.append(H_MISC)
-        if use_tables:
-            p.append("| Nhiều bạn nghĩ | Thực ra |")
-            p.append("| --- | --- |")
-            for m in _cap(lo["misconceptions"]):
-                p.append(f"| {_cell(m.get('wrong',''))} | {_cell(m.get('correct',''))} |")
-        else:
-            for m in _cap(lo["misconceptions"]):
-                p.append(f"- ❌ {_line(m.get('wrong',''))}")
-                p.append(f"  - ✅ {_line(m.get('correct',''))}")
-        p.append("")
-
-    if lo.get("memory_hooks") and "memory_hooks" in keep:
-        p.append(H_HOOKS)
-        p += _bullets(_cap(lo["memory_hooks"]), mw)
-        p.append("")
-
-    if images and "images" in keep:
+    # Mục "🖼️ Hình minh hoạ" cuối bài: CHỈ chứa ảnh mindmap (code vẽ). Ảnh sách
+    # đã được chèn vào các mục nội dung ở trên. Nếu bài không có mục nội dung nào
+    # (sections rỗng) thì ảnh sách chưa gắn được cũng gom vào đây để không mất.
+    sections_rendered = bool(lo.get("sections")) and "sections" in keep
+    final_imgs = list(mindmap_imgs)
+    if not sections_rendered:
+        final_imgs += book_unplaced + [im for lst in book_by_section.values() for im in lst]
+    if final_imgs and "images" in keep:
         p.append(H_IMAGES)
-        for img in images:
-            cap = _line(img.get("caption", "")).replace("]", ")")
-            p.append(f"![{cap}]({img['file']})")
+        for img in final_imgs:
+            p.append(_img_md(img))
+        p.append("")
+
+    # LUÔN là mục CUỐI CÙNG: chốt bài bằng câu trả lời cho hook đầu bài.
+    if lo.get("hook_answer") and "hook_answer" in keep:
+        p.append(H_HOOK_ANSWER)
+        p.append(f"> {_line(lo['hook_answer'])}")
         p.append("")
 
     # gộp dòng trống thừa

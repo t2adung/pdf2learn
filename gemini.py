@@ -254,11 +254,7 @@ class MockGemini(Gemini):
                     ],
                 },
                 "real_life": ["Ví dụ đời sống minh hoạ khái niệm X (mock)."],
-                "memory_hooks": ["Nhớ X bằng ba chữ Đ: Đặc điểm - Định nghĩa - Đời sống."],
-                "misconceptions": [
-                    {"wrong": "Nhiều bạn nghĩ X và Y là một (mock).",
-                     "correct": "Thực ra X khác Y ở tính chất cốt lõi."},
-                ],
+                "hook_answer": "Vì X có mặt khắp nơi trong đời sống nên ta ít để ý (mock).",
                 "key_points": [
                     "Khái niệm X là nền tảng của chủ đề",
                     "Tính chất Y phân biệt X với Z",
@@ -270,7 +266,9 @@ class MockGemini(Gemini):
             base["questions"] = self.generate_json(parts, schema, "questions")["questions"]
             return base
         if tag == "img_filter":
-            return {"keep": [{"index": 0, "caption": "Hình minh hoạ khái niệm chính (mock)"}]}
+            # section_index=0: chèn vào mục nội dung đầu tiên (không vào mục ảnh cuối)
+            return {"keep": [{"index": 0, "section_index": 0,
+                              "caption": "Hình minh hoạ khái niệm chính (mock)"}]}
         if tag == "questions":
             qs = []
             for i, kp in enumerate(["Khái niệm X", "Tính chất Y", "Ứng dụng X"], 1):

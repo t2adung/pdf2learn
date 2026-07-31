@@ -31,13 +31,19 @@ from utils import load_json, log, save_json, warn
 
 # Phiên bản shape của 03_content.json. v2 = Learning Object JSON
 # (objectives/sections/mindmap/...) thay cho blob content_markdown (v1).
-CONTENT_VERSION = 2
+# v3 = bỏ memory_hooks/misconceptions/comparison, thêm hook_answer.
+CONTENT_VERSION = 3
 
 
 def main():
     ap = argparse.ArgumentParser(description="PDF -> learning package (topics + MCQ)")
     ap.add_argument("pdf", type=Path, help="đường dẫn file PDF")
     ap.add_argument("--level", default="Lớp 6", help='giá trị cột level, vd "Lớp 6"')
+    ap.add_argument("--limit", type=int, default=0, metavar="N",
+                    help="CHỈ xử lý N topic (bài) ĐẦU TIÊN rồi export CSV luôn — "
+                         "test nhanh chất lượng bài 1,2 trước khi chạy cả sách "
+                         "(vd --limit 2). 0 = làm hết. Cache giữ nguyên nên chạy "
+                         "lại bỏ cờ này sẽ làm tiếp các topic còn lại.")
     ap.add_argument("--model", default="gemini-2.5-flash")
     ap.add_argument("--density", default="full",
                     choices=["full", "compact", "minimal"],
@@ -68,6 +74,11 @@ def main():
                          "(giảm token mạnh; khuyến nghị 110 cho sách scan; 0 = tắt)")
     ap.add_argument("--redo-from", type=int, default=99, choices=range(1, 8),
                     metavar="N", help="xoá cache từ stage N trở đi rồi sinh lại")
+    ap.add_argument("--redo-content", action="store_true",
+                    help="sinh LẠI content (stage 3, gọi AI) + ảnh mindmap suy ra "
+                         "từ content (stage 4), nhưng GIỮ NGUYÊN câu hỏi (stage 5) "
+                         "và review (stage 6) đã có — 0 token cho câu hỏi. Dùng khi "
+                         "chỉ muốn làm mới bài học mà không sinh lại bộ câu hỏi.")
     ap.add_argument("--force-ai-toc", action="store_true",
                     help="bỏ qua bookmark PDF, luôn dùng AI trích mục lục")
     ap.add_argument("--fused", action="store_true",
@@ -138,6 +149,20 @@ def main():
         warn("Reset trạng thái batch export (các thư mục batch-* cũ đã lỗi thời, "
              "batch mới sẽ đánh số lại từ 01).")
 
+    # ---- --redo-content: sinh lại content (+ ảnh mindmap) nhưng GIỮ câu hỏi ----
+    # Chỉ xoá cache stage 3 (content) và 4 (ảnh — mindmap suy ra từ content nên
+    # phải vẽ lại cho khớp). Cache stage 5 (câu hỏi) và 6 (review) giữ nguyên =>
+    # không tốn token sinh lại câu hỏi. Câu hỏi cũ vẫn dùng key_points đời trước,
+    # đó chính là ý muốn: làm mới bài học mà không đụng bộ câu hỏi đã duyệt.
+    if args.redo_content:
+        for n in (3, 4):
+            if caches[n].exists():
+                caches[n].unlink()
+                log(f"♻️  --redo-content: xoá cache stage {n}: {caches[n].name}")
+        if images_dir.exists():
+            shutil.rmtree(images_dir)
+        log("   (GIỮ NGUYÊN câu hỏi stage 5 + review stage 6 — 0 token cho câu hỏi)")
+
     # ---- Stage 1: TOC ----
     if args.toc_file:
         if not args.toc_file.exists():
@@ -198,6 +223,14 @@ def main():
 
     if not structure:
         sys.exit("Không xác định được topic nào — kiểm tra lại PDF/mục lục.")
+
+    # ---- --limit N: chỉ xử lý + export N topic đầu (test nhanh bài 1,2) ----
+    # Cắt structure ở đây => mọi stage sau (content/images/questions/export) đều
+    # chỉ thấy N topic này. Cache của chúng vẫn dùng lại được khi chạy full sau.
+    if args.limit and args.limit > 0 and args.limit < len(structure):
+        log(f"── --limit {args.limit}: chỉ xử lý {args.limit}/{len(structure)} "
+            f"topic đầu tiên rồi export CSV (test nhanh) ──")
+        structure = structure[:args.limit]
 
     # ---- Guard 0 token: xác nhận mục lục TRƯỚC khi đốt quota AI ----
     # Mục lục sai (offset lệch, AI đoán nhầm) là lỗi đắt nhất: mọi stage sau
@@ -263,7 +296,8 @@ def main():
             if not args.no_images and slug not in images:
                 images[slug] = generate_images_one(doc, row, content[slug],
                                                    client, images_dir,
-                                                   book_images=args.book_images)
+                                                   book_images=args.book_images,
+                                                   page_dpi=args.dpi)
                 save_json(caches[4], images)
             if slug not in questions:
                 qs, dropped = generate_questions_one(row, content[slug], client,

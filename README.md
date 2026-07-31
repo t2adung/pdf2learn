@@ -75,13 +75,16 @@ rõ, export partial rồi thoát — quota reset ~14-15h chiều giờ VN.
 | Flag | Ý nghĩa |
 |---|---|
 | `--level "Lớp 6"` | Giá trị cột `level` (mặc định "Lớp 6") |
+| `--limit N` | CHỈ xử lý N bài ĐẦU rồi export CSV luôn (vd `--limit 2` để test nhanh bài 1-2). 0 = làm hết. Cache giữ nguyên: bỏ cờ này chạy lại sẽ làm tiếp phần còn lại |
 | `--dry-run` | MockGemini, không cần API key — kiểm tra pipeline & format output |
 | `--no-images` | Bỏ stage ảnh: −1..2 request/topic (~30%), lấy ảnh sau bằng cách chạy lại bỏ cờ này |
+| `--book-images` | Đính kèm **NGUYÊN TRANG sách** (không cắt hình) — **0 token, thuần code**: render từng trang trong page range ra PNG, rồi **gắn mỗi trang vào đúng mục nội dung** (khớp text trang với heading/points; sách scan không có text → ánh xạ theo thứ tự trang). Ảnh trang nằm trong mục "Nội dung chính"; mục "🖼️ Hình minh hoạ" cuối bài chỉ còn ảnh mindmap. Kèm `--dpi N` để render grayscale gọn cho sách scan. Mặc định TẮT: chỉ giữ mindmap SVG |
 | `--no-validate` | Bỏ pass tự giải kiểm chứng đáp án (không khuyến nghị) |
 | `--review` | Bật stage 6: model thứ hai thẩm định content + câu hỏi |
 | `--reviewer X` | `groq` (Llama 70B, độc lập nhà cung cấp — mặc định) / `openrouter` (DeepSeek R1) / `gemini-pro` (duy nhất đối chiếu được PDF gốc) |
 | `--review-fix` | Tự loại câu hỏi bị review đánh `severity=high` (mặc định chỉ báo cáo) |
 | `--redo-from N` | Xoá cache stage N→7 rồi sinh lại (vd `5`: sinh lại câu hỏi; ≤5 reset đánh số batch) |
+| `--redo-content` | Sinh LẠI content (stage 3, gọi AI) + ảnh mindmap (stage 4), NHƯNG giữ nguyên câu hỏi (stage 5) + review (stage 6) đã có — 0 token cho câu hỏi. Dùng khi chỉ muốn làm mới bài học mà không đụng bộ câu hỏi đã duyệt |
 | `--force-ai-toc` | Bỏ qua bookmark PDF, luôn dùng AI trích mục lục |
 | `--dpi N` | Nén trang scan độ phân giải CAO về N dpi gray (có guard chống upscale — scan đã nhỏ thì tự giữ nguyên) |
 | `--model` | Mặc định `gemini-2.5-flash` |

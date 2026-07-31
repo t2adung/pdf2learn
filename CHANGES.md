@@ -1,5 +1,27 @@
 # pdf2learn v2 — Content chuyển từ Markdown blob sang Learning Object JSON
 
+## Cập nhật schema bài học (mới nhất)
+
+- **Thêm mục cuối `✅ Trả lời câu hỏi khởi động`** (field `hook_answer`): chốt
+  bài bằng câu trả lời cho chính câu hỏi khởi động (`hook`) ở đầu bài. LUÔN là
+  mục cuối cùng trong cột `content`.
+- **Bỏ hẳn các mục `💡 Mẹo nhớ` (`memory_hooks`), `⚠️ Dễ nhầm lẫn`
+  (`misconceptions`) và `📊 Bảng so sánh ghi nhớ` (`comparison`)** khỏi schema,
+  prompt, JSON đích, mock và test. Cột `content` giờ gồm: Mục tiêu → Câu hỏi
+  khởi động → Từ khoá → Nội dung chính → Liên hệ thực tế → Hình minh hoạ →
+  Trả lời câu hỏi khởi động.
+- **`--limit N`**: chỉ xử lý N bài đầu rồi export CSV luôn (test nhanh bài 1-2).
+- **`--redo-content`**: sinh lại content (stage 3) + ảnh mindmap (stage 4) nhưng
+  GIỮ NGUYÊN câu hỏi (stage 5) + review (stage 6) — 0 token cho câu hỏi. Dùng khi
+  chỉ muốn làm mới bài học mà không sinh lại bộ câu hỏi đã duyệt.
+- **Ảnh sách (`--book-images`) đính kèm NGUYÊN TRANG (không cắt hình) — 0 token**:
+  render từng trang trong page range ra PNG rồi gắn mỗi trang vào ĐÚNG mục nội
+  dung — khớp text trang với heading/points (`_match_section`); trang scan không
+  có text layer → ánh xạ theo THỨ TỰ trang (trang đầu ~ mục đầu). Không gọi AI
+  ⇒ 0 token. `--dpi N` → render grayscale gọn cho sách scan. Mục "🖼️ Hình minh
+  hoạ" cuối bài chỉ còn ảnh mindmap. Test: `test_images.py`.
+- Đổi schema ⇒ cache `03_content.json` cũ hết hợp lệ, chạy lại với `--redo-from 3`.
+
 ## Cài đặt lần đầu (macOS / Linux)
 
 Yêu cầu Python 3.9+ (khuyến nghị 3.12). Kiểm tra: `python3 --version`.
