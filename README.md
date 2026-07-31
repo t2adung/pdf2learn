@@ -4,7 +4,9 @@ Pipeline AI biến một PDF giáo trình (kể cả PDF **scan**) thành gói h
 được ngay:
 
 - chia **module → topic** theo mục lục,
-- soạn **bài học** dạng Learning Object (mục tiêu, thuật ngữ, nội dung, mindmap…),
+- soạn **bài học** dạng Learning Object rồi render cột `content` theo thứ tự cố
+  định: 🎯 Mục tiêu → 🤔 Câu hỏi khởi động → 🔑 Từ khoá → 📚 Nội dung chính →
+  🌍 Liên hệ thực tế → 🖼️ Hình minh hoạ → ✅ Trả lời câu hỏi khởi động,
 - đính **nguyên trang sách** vào đúng mục nội dung (0 token),
 - sinh **câu hỏi trắc nghiệm** phủ hết kiến thức, có pass tự giải kiểm chứng đáp án,
 - **cross-model review** (tuỳ chọn) + **quality checks** thuần code + **báo cáo token**,
@@ -212,9 +214,14 @@ Kết quả trung gian mỗi stage lưu ở `runs/<tên-pdf>/work/`:
 ```
 
 Content là **Learning Object có cấu trúc** (không phải blob markdown): AI chỉ trả
-DỮ LIỆU, cú pháp markdown/SVG do code sinh → đổi `--density`/`--content-format`
-không tốn token. Chống hallucination: chỉ gửi đúng các trang của topic (cắt
-sub-PDF theo page range) và tách rõ field phải bám tài liệu vs field được bổ sung.
+DỮ LIỆU (`objectives`, `hook`, `key_terms`, `sections`, `real_life`, `mindmap`,
+`hook_answer`, `key_points`), cú pháp markdown/SVG do code sinh → đổi
+`--density`/`--content-format` không tốn token. Chống hallucination: chỉ gửi
+đúng các trang của topic (cắt sub-PDF theo page range) và tách rõ field phải bám
+tài liệu vs field được bổ sung.
+
+> Đổi schema ⇒ cache `03_content.json` đời cũ (còn `misconceptions`/`memory_hooks`)
+> hết hợp lệ; tool sẽ báo và yêu cầu chạy lại với `--redo-from 3`.
 
 ---
 
