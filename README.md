@@ -48,6 +48,98 @@ python main.py sach.pdf --level "Lớp 6" --backend claude
 > subscription — **không tính tiền theo token**, chỉ ăn hạn mức. Chi tiết cách hoạt
 > động ở mục [Dùng Claude thay cho Google API](#dùng-claude-thay-cho-google-api-backend-claude) ngay dưới đây.
 
+## Flow đầy đủ: từ 1 file PDF → bộ JSON bài học hoàn chỉnh
+
+Toàn bộ hành trình một cuốn sách, kết thúc bằng **các file JSON học liệu**
+(`output/json/{topic_slug}.json`) — mỗi bài 1 file gồm mục tiêu, nội dung, mindmap
+(chuỗi mermaid), và bộ câu hỏi nhúng sẵn. Cột mốc dừng để duyệt được **in đậm**.
+
+```bash
+# ── B0. Cài đặt (làm 1 lần) ──────────────────────────────────────────────
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+export GEMINI_API_KEY=AIza...        # backend gemini; HOẶC dùng --backend claude (khỏi key)
+
+# ── B1. (khuyến nghị) Dựng sẵn mục lục chính xác từ ảnh/PDF trang mục lục ──
+#        Bỏ qua bước này nếu PDF đã có bookmark chuẩn.
+python3 toc_from_images.py toc_images/sach --out sach.toc.txt      # OCR → toc.txt
+#   → 📌 MỞ sach.toc.txt ĐỐI CHIẾU ẢNH: đúng tên bài + số trang in chưa?
+python3 build_toc.py sach.toc.txt --offset 2 --last-page 197 \
+    --out runs/sach/work/01_toc.json                              # → 01_toc.json (0 token)
+
+# ── B2. Xem trước FORMAT, 0 chi phí (mock AI, không cần key) ──────────────
+python main.py sach.pdf --dry-run --export-json --limit 2
+#   → xem cấu trúc runs/sach/output/json/*.json có khớp hệ thống đích không
+
+# ── B3. THỬ THẬT 1–2 bài đầu (content + hình + câu hỏi), rồi export ───────
+python main.py sach.pdf --level "Lớp 6" --toc-file runs/sach/work/01_toc.json \
+    --export-json --limit 2
+#   → 📌 Stage 1–2 in mục lục: soát page range trong work/01_toc.json rồi Enter
+#   → Mở runs/sach/output/json/<bai-1>.json, <bai-2>.json kiểm tra chất lượng
+#     (chưa ưng câu hỏi? python main.py sach.pdf ... --limit 2 --redo-from 5)
+
+# ── B4. Ưng rồi → chạy HẾT cả sách (bỏ --limit; 2 bài đầu đã cache, 0 token lại) ─
+python main.py sach.pdf --level "Lớp 6" --toc-file runs/sach/work/01_toc.json \
+    --export-json
+
+# ── (tuỳ chọn) kèm thẩm định chéo bằng model thứ 2 trước khi chốt ─────────
+python main.py sach.pdf --level "Lớp 6" --toc-file runs/sach/work/01_toc.json \
+    --export-json --review
+```
+
+**Kết quả cuối** ở `runs/sach/output/`:
+
+- `json/{topic_slug}.json` — **bộ JSON hoàn chỉnh từng bài** (title, objectives, hook,
+  key_terms, sections, `mindmap_mermaid`, hook_answer, `quiz[]`). Đây là thứ bạn cần.
+- `topics.csv` + `multichoice.csv` — bản CSV đúng template import (kèm `images/`).
+- `manifest.json` — bản đồ topic → ảnh → nguồn + warnings + quality checks.
+- `review_report.md` — (nếu `--review`) đọc trước khi chốt.
+
+> Dùng `--backend claude` thì thay mọi chỗ gọi AI ở trên bằng subscription Claude —
+> chỉ cần thêm `--backend claude` vào lệnh `main.py` (và `toc_from_images.py` nếu OCR
+> mục lục). `--export-json` là **thuần code, 0 token** nên bật lúc nào cũng được.
+
+## Chế độ thử nhanh 1–2 bài đầu (`--limit N`) — nên làm TRƯỚC khi chạy cả sách
+
+Đừng đốt quota/hạn mức cho cả cuốn khi chưa biết chất lượng ra sao. Cờ **`--limit N`**
+chỉ generate **N bài ĐẦU TIÊN** (đủ cả **content + hình + câu hỏi**) rồi **export CSV
+luôn** — để bạn mở `topics.csv` / `multichoice.csv` xem thử bài 1–2 trước.
+
+Điểm mấu chốt: **cache được giữ nguyên**. Sau khi ưng, chạy lại **bỏ `--limit`** thì
+2 bài đầu **không sinh lại** (0 token/0 hạn mức), tool chỉ làm tiếp các bài còn lại.
+
+```bash
+# 0) (khuyến nghị) Xem trước FORMAT mà không tốn gì — mock AI, không cần key:
+python main.py sach.pdf --dry-run --limit 2
+
+# 1) THỬ bài 1–2 thật (Gemini):
+python main.py sach.pdf --level "Lớp 6" --limit 2
+
+#    ...hoặc thử bằng SUBSCRIPTION Claude (không cần API key):
+python main.py sach.pdf --level "Lớp 6" --limit 2 --backend claude
+
+# 2) Mở xem kết quả bài 1–2:
+#    runs/sach/output/topics.csv          (cột content = bài học)
+#    runs/sach/output/multichoice.csv     (bộ câu hỏi)
+#    runs/sach/output/batch-01/           (đúng lô 2 bài này, tiện test import)
+
+# 3) Chưa ưng câu hỏi bài 1–2? Sinh LẠI chỉ câu hỏi (giữ content), vẫn --limit 2:
+python main.py sach.pdf --level "Lớp 6" --limit 2 --redo-from 5
+
+# 4) Ưng rồi → chạy HẾT (bỏ --limit). Bài 1–2 đã cache nên KHÔNG tốn lại:
+python main.py sach.pdf --level "Lớp 6"
+```
+
+- `--limit 0` (mặc định) = làm hết. `--limit 2` = chỉ bài 1–2.
+- Muốn thử kèm **thẩm định chéo** cho 2 bài đầu: thêm `--review` (xem mục options).
+- Lô thử nằm ở `output/batch-01/` (delta) + đã gộp vào snapshot gốc `output/` —
+  import thử `batch-01/` trước cho gọn.
+
+> Mẹo QC 0 token: khi Stage 1–2 in mục lục ra, **soát page range** trong
+> `work/01_toc.json` trước khi Enter. Mục lục sai là lỗi đắt nhất (mọi bài sinh sai
+> theo). Sai thì sửa JSON rồi `--redo-from 2`, hoặc dựng sẵn bằng
+> [công cụ mục lục](#công-cụ-dựng-mục-lục).
+
 ## Dùng Claude thay cho Google API (backend claude)
 
 Thay vì gọi REST API của Gemini (tính tiền/hạn mức theo token), backend này gọi
@@ -236,9 +328,9 @@ Cú pháp: `python main.py <file.pdf> [options]`. Dưới đây là **tất cả
 Có thể đặt các biến trên trong file `.env` (chép từ `env.example`) — tự nạp qua
 python-dotenv.
 
-## Công cụ dựng mục lục (`toc_from_images.py` + `build_toc.py`)
+## Công cụ dựng mục lục
 
-Hai script phụ để tạo sẵn `01_toc.json` chính xác 100% rồi nạp vào `main.py` bằng
+Hai script phụ — **`toc_from_images.py`** và **`build_toc.py`** — để tạo sẵn `01_toc.json` chính xác 100% rồi nạp vào `main.py` bằng
 `--toc-file` — tránh để AI đọc cả cuốn PDF suy ra mục lục (đặc biệt hữu ích với
 `--backend claude`). AI **chỉ làm đúng việc OCR vài trang mục lục** (1 request rẻ);
 việc tính `page_end`, áp offset, kiểm tra thứ tự trang là **code deterministic**.
