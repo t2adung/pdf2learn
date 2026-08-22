@@ -236,6 +236,65 @@ Cú pháp: `python main.py <file.pdf> [options]`. Dưới đây là **tất cả
 Có thể đặt các biến trên trong file `.env` (chép từ `env.example`) — tự nạp qua
 python-dotenv.
 
+## Công cụ dựng mục lục (`toc_from_images.py` + `build_toc.py`)
+
+Hai script phụ để tạo sẵn `01_toc.json` chính xác 100% rồi nạp vào `main.py` bằng
+`--toc-file` — tránh để AI đọc cả cuốn PDF suy ra mục lục (đặc biệt hữu ích với
+`--backend claude`). AI **chỉ làm đúng việc OCR vài trang mục lục** (1 request rẻ);
+việc tính `page_end`, áp offset, kiểm tra thứ tự trang là **code deterministic**.
+
+Luồng đầy đủ:
+
+```
+ảnh/PDF trang mục lục
+   └─(toc_from_images.py — 1 request AI OCR)→ toc.txt   ← MỞ RA SOÁT/SỬA TAY (0 token)
+        └─(build_toc.py — thuần code)→ 01_toc.json
+             └─ main.py sach.pdf --toc-file 01_toc.json
+```
+
+### `toc_from_images.py` — OCR trang mục lục → `toc.txt`
+
+```bash
+# Nguồn có thể là: thư mục ảnh, thư mục chứa PDF, 1 file .pdf, hoặc 1 file ảnh
+python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
+python3 toc_from_images.py toc_images/ten-sach.pdf --out ten-sach.toc.txt
+
+# Gộp luôn ra 01_toc.json (khi đã biết offset + last-page):
+python3 toc_from_images.py toc_images/ten-sach --offset 2 --last-page 197 \
+    --json-out runs/ten-sach/work/01_toc.json
+```
+
+| Flag | Mặc định | Ý nghĩa |
+|---|---|---|
+| `images_dir` (vị trí) | — | Nguồn mục lục: thư mục ảnh/PDF, 1 file `.pdf`, hoặc 1 file ảnh. PDF được render từng trang rồi OCR (khỏi chụp tay) |
+| `--out PATH` | `<images_dir>.toc.txt` | Nơi ghi `toc.txt` (điểm dừng để soát tay) |
+| `--offset N` | — | (tuỳ chọn) `page_pdf = page_in + offset` — kèm `--last-page` để ghi thẳng JSON |
+| `--last-page M` | — | (tuỳ chọn) trang PDF nơi bài cuối kết thúc |
+| `--json-out PATH` | không | Ghi thẳng `01_toc.json` (**cần cả** `--offset` + `--last-page`) |
+| `--model X` | `gemini-2.5-flash` | Model OCR |
+| `--interval S` | `6.0` | Giây giữa 2 request |
+| `--dry-run` | tắt | MockGemini, không cần API key |
+
+> Backend AI của bước OCR này là **Gemini** (cần `GEMINI_API_KEY`, hoặc `--dry-run`),
+> không phải Claude — nó là script độc lập với `main.py`.
+
+### `build_toc.py` — `toc.txt` (đã soát) → `01_toc.json`
+
+```bash
+python3 build_toc.py ten-sach.toc.txt --offset 2 --last-page 197 \
+    --out runs/ten-sach/work/01_toc.json
+```
+
+| Flag | Bắt buộc | Ý nghĩa |
+|---|---|---|
+| `toc_txt` (vị trí) | ✔ | File `.txt` định dạng `= Tên module` / `Tên bài \| số trang IN` (dòng `#` bị bỏ qua) |
+| `--offset N` | ✔ | `page_pdf = page_in + offset`. Ví dụ: trang in "6" nằm ở trang PDF thứ 8 → offset = 2. Gõ thẳng số trang PDF thì để `0` |
+| `--last-page M` | ✔ | Trang PDF nơi **bài cuối** kết thúc (`page_end` bài cuối). `page_end` mỗi bài = trang bắt đầu bài kế − 1 |
+| `--out PATH` | ✔ | Nơi ghi `01_toc.json` |
+
+Chạy **thuần code, 0 token**. Sai số trang → sửa lại `toc.txt` rồi chạy lại
+`build_toc.py`; không tốn request AI.
+
 ## Báo cáo token (luôn bật)
 
 Cuối mỗi phiên in bảng token theo tag (content/questions/validate/review/...),
