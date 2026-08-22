@@ -14,6 +14,10 @@
   chạy lại chính lệnh khi cửa sổ reset để resume theo topic.
 - Test: `test_claude_cli.py` (monkeypatch `subprocess.run`, 0 chi phí, không cần
   lệnh `claude` thật).
+- **`toc_from_images.py` cũng nhận `--backend {gemini,claude}`** (giống `main.py`):
+  bước OCR trang mục lục có thể chạy bằng subscription Claude — ảnh ghi file tạm cho
+  Claude đọc bằng Read, `--model` Gemini tự đổi sang `sonnet`. Chức năng y hệt nhánh
+  Gemini (OCR → `toc.txt` → `01_toc.json`).
 
 ## Cập nhật schema bài học (mới nhất)
 

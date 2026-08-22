@@ -259,6 +259,9 @@ Luồng đầy đủ:
 python3 toc_from_images.py toc_images/ten-sach --out ten-sach.toc.txt
 python3 toc_from_images.py toc_images/ten-sach.pdf --out ten-sach.toc.txt
 
+# Dùng SUBSCRIPTION Claude thay GEMINI_API_KEY (giống main.py):
+python3 toc_from_images.py toc_images/ten-sach --backend claude --out ten-sach.toc.txt
+
 # Gộp luôn ra 01_toc.json (khi đã biết offset + last-page):
 python3 toc_from_images.py toc_images/ten-sach --offset 2 --last-page 197 \
     --json-out runs/ten-sach/work/01_toc.json
@@ -267,16 +270,14 @@ python3 toc_from_images.py toc_images/ten-sach --offset 2 --last-page 197 \
 | Flag | Mặc định | Ý nghĩa |
 |---|---|---|
 | `images_dir` (vị trí) | — | Nguồn mục lục: thư mục ảnh/PDF, 1 file `.pdf`, hoặc 1 file ảnh. PDF được render từng trang rồi OCR (khỏi chụp tay) |
+| `--backend gemini\|claude` | `gemini` | Nguồn AI OCR — **giống `main.py`**: `gemini` (cần `GEMINI_API_KEY`) hoặc `claude` (Claude Code CLI `claude -p`, dùng subscription Max/Pro, không cần key). Ảnh mục lục được ghi file tạm cho Claude đọc bằng `Read` |
 | `--out PATH` | `<images_dir>.toc.txt` | Nơi ghi `toc.txt` (điểm dừng để soát tay) |
 | `--offset N` | — | (tuỳ chọn) `page_pdf = page_in + offset` — kèm `--last-page` để ghi thẳng JSON |
 | `--last-page M` | — | (tuỳ chọn) trang PDF nơi bài cuối kết thúc |
 | `--json-out PATH` | không | Ghi thẳng `01_toc.json` (**cần cả** `--offset` + `--last-page`) |
-| `--model X` | `gemini-2.5-flash` | Model OCR |
+| `--model X` | `gemini-2.5-flash` | Model OCR. Với `--backend claude`: giá trị Gemini tự đổi sang `sonnet` |
 | `--interval S` | `6.0` | Giây giữa 2 request |
 | `--dry-run` | tắt | MockGemini, không cần API key |
-
-> Backend AI của bước OCR này là **Gemini** (cần `GEMINI_API_KEY`, hoặc `--dry-run`),
-> không phải Claude — nó là script độc lập với `main.py`.
 
 ### `build_toc.py` — `toc.txt` (đã soát) → `01_toc.json`
 
