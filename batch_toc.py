@@ -92,11 +92,38 @@ def toc_to_txt(toc: dict) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def validate_toc_file(path: Path):
+    """Kiểm tra 1 file TOC đã có HỢP LỆ chưa (đúng shape 01_toc.json mà pipeline
+    cần). Trả về (ok: bool, reason: str). Dùng để chỉ BỎ QUA khi file thật sự
+    dùng được — file rỗng/hỏng do lần trước đứt giữa chừng sẽ bị sinh lại."""
+    import json
+    if not path.exists():
+        return False, "chưa có file"
+    raw = path.read_text(encoding="utf-8").strip()
+    if not raw:
+        return False, "file rỗng (0 byte)"
+    try:
+        toc = json.loads(raw)
+    except Exception as e:
+        return False, f"JSON hỏng: {e}"
+    if not isinstance(toc, dict) or not toc.get("modules"):
+        return False, "thiếu key 'modules'"
+    n_top = sum(len(m.get("topics", [])) for m in toc["modules"]
+                if isinstance(m, dict))
+    if n_top == 0:
+        return False, "không có topic nào"
+    return True, f"{len(toc['modules'])} module, {n_top} bài"
+
+
 def process_one(pdf_path: Path, out_json: Path, args, get_client) -> str:
     """Sinh TOC cho 1 PDF. Trả về 'ok' | 'skip' | 'error'. get_client() lazy-init client."""
+    # Validate trước khi bỏ qua: chỉ skip khi file TOC đã có VÀ hợp lệ.
     if out_json.exists() and not args.overwrite:
-        log(f"  ↷ bỏ qua (đã có): {out_json}")
-        return "skip"
+        ok, reason = validate_toc_file(out_json)
+        if ok:
+            log(f"  ↷ bỏ qua (đã có, hợp lệ — {reason}): {out_json}")
+            return "skip"
+        warn(f"  file TOC đã có nhưng KHÔNG hợp lệ ({reason}) -> sinh lại: {out_json}")
 
     from stage_toc import extract_toc
     # PDF có bookmark -> extract_toc không dùng client; chỉ khởi tạo AI khi cần.

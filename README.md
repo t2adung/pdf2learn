@@ -198,8 +198,10 @@ python3 batch_toc.py pdf --out tocs --also-txt --overwrite
 - Nguồn mục lục theo đúng quy tắc `main.py`: PDF **có bookmark** → thuần code
   0 token; **không có** → AI (Gemini/Claude) suy ra. Client AI chỉ khởi tạo khi
   thực sự có sách thiếu bookmark, nên bộ sách toàn bookmark chạy **0 token**.
-- Mặc định **resume**: file TOC đã có được bỏ qua (dùng `--overwrite` để ép sinh
-  lại). Một file lỗi **không** làm dừng cả lô — cuối cùng in bảng tổng kết
+- Mặc định **resume + validate**: file TOC đã có được **kiểm tra hợp lệ** (đúng
+  shape `01_toc.json`, có topic) rồi mới bỏ qua; file rỗng/hỏng do lần trước đứt
+  giữa chừng sẽ **tự sinh lại**. Dùng `--overwrite` để ép sinh lại tất cả. Một
+  file lỗi **không** làm dừng cả lô — cuối cùng in bảng tổng kết
   (đã sinh / bỏ qua / lỗi) và thoát mã `1` nếu có lỗi.
 - Mỗi file `*.toc.json` dùng thẳng được cho pipeline:
   `python3 main.py pdf/lop6/khtn.pdf --level "Lớp 6" --toc-file tocs/lop6/khtn.toc.json`.
