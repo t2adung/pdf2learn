@@ -10,10 +10,16 @@ Pipeline AI biến một PDF giáo trình (kể cả PDF **scan**) thành gói h
 - đính **nguyên trang sách** vào đúng mục nội dung (0 token),
 - sinh **câu hỏi trắc nghiệm** phủ hết kiến thức, có pass tự giải kiểm chứng đáp án,
 - **cross-model review** (tuỳ chọn) + **quality checks** thuần code + **báo cáo token**,
-- export đúng template: `topics.csv`, `multichoice.csv`, `images/`, `manifest.json`.
+- export đúng template: `topics.csv`, `multichoice.csv`, `images/`, `manifest.json`
+  (tuỳ chọn `output/json/` — bộ Learning Object JSON hoàn chỉnh từng bài).
 
-AI chính: **Google Gemini API (free tier)** — đọc PDF native, structured output.
-Reviewer (tuỳ chọn): **Groq / OpenRouter / Gemini Pro**.
+**Hai backend AI** (chọn bằng `--backend`):
+
+- `gemini` (mặc định) — **Google Gemini API free tier**, đọc PDF native, structured
+  output, tính theo token, cần `GEMINI_API_KEY`. Reviewer tuỳ chọn: Groq / OpenRouter / Gemini Pro.
+- `claude` — dùng **gói subscription Claude Max/Pro** qua Claude Code CLI (`claude -p`)
+  trên máy. **KHÔNG cần API key, KHÔNG tính tiền theo token** (chỉ ăn hạn mức
+  subscription). Xem [Dùng Claude thay cho Google API](#dùng-claude-thay-cho-google-api-backend-claude).
 
 > **Điểm cốt lõi để tiết kiệm quota:** mọi khâu *định dạng* (render markdown, vẽ
 > mindmap SVG, đính trang sách, đổi độ dài/format, dựng TOC từ file có sẵn) đều
@@ -25,7 +31,9 @@ Reviewer (tuỳ chọn): **Groq / OpenRouter / Gemini Pro**.
 ## Yêu cầu & cài đặt
 
 - Python **3.9+** (khuyến nghị 3.12+).
-- API key miễn phí Gemini: https://aistudio.google.com
+- Backend `gemini`: API key miễn phí Gemini: https://aistudio.google.com
+- Backend `claude`: đã cài **Claude Code** và `claude login` bằng tài khoản
+  **Max/Pro** — không cần biến môi trường nào.
 
 ```bash
 python3 -m venv .venv
@@ -33,7 +41,7 @@ source .venv/bin/activate
 pip install -r requirements.txt        # pymupdf + requests + python-dotenv
 ```
 
-Đặt API key theo 1 trong 2 cách:
+Đặt API key (chỉ cho backend `gemini`) theo 1 trong 2 cách:
 
 ```bash
 # Cách A — biến môi trường:
@@ -43,7 +51,7 @@ export GEMINI_API_KEY=AIza...
 cp env.example .env      # rồi dán key thật vào .env
 ```
 
-Reviewer chỉ cần thêm key khi dùng `--review`:
+Reviewer chỉ cần thêm key khi dùng `--review` với backend gemini:
 
 ```bash
 export GROQ_API_KEY=gsk_...            # free: https://console.groq.com
@@ -70,6 +78,52 @@ python3 main.py sach.pdf --level "Lớp 6"
 python3 main.py sach.pdf --level "Lớp 6" --review
 ```
 
+> Muốn dùng **subscription Claude** thay Gemini: thêm `--backend claude` vào bất kỳ
+> lệnh nào ở trên (không cần `GEMINI_API_KEY`). Xem
+> [Dùng Claude thay cho Google API](#dùng-claude-thay-cho-google-api-backend-claude).
+
+### Flow đầy đủ: từ 1 file PDF → bộ JSON học liệu hoàn chỉnh
+
+Toàn bộ hành trình một cuốn sách, kết thúc bằng **các file JSON học liệu**
+`output/json/{topic_slug}.json` (bật bằng `--export-json`) — mỗi bài 1 file gồm
+`title, objectives, hook, key_terms, sections, mindmap_mermaid, hook_answer, quiz[]`.
+Cột mốc **in đậm** là chỗ nên dừng để duyệt.
+
+```bash
+# ── B0. Cài đặt (làm 1 lần) — xem mục "Yêu cầu & cài đặt" ─────────────────
+#        backend gemini: export GEMINI_API_KEY=...   |   hoặc dùng --backend claude
+
+# ── B1. (khuyến nghị) Dựng sẵn mục lục CHÍNH XÁC (0 token) ────────────────
+#        Bỏ qua nếu PDF đã có bookmark chuẩn.
+python3 toc_from_images.py toc_images/sach --out sach.toc.txt      # OCR → toc.txt
+#   → 📌 MỞ sach.toc.txt ĐỐI CHIẾU ẢNH: đúng tên bài + số trang in chưa?
+python3 build_toc.py sach.toc.txt --offset 2 --last-page 197 \
+    --out runs/sach/work/01_toc.json                              # → 01_toc.json
+
+# ── B2. Xem trước FORMAT JSON, 0 chi phí (mock AI, không cần key) ─────────
+python3 main.py sach.pdf --dry-run --export-json --limit 2
+#   → xem cấu trúc runs/sach/output/json/*.json có khớp hệ thống đích không
+
+# ── B3. THỬ THẬT 1–2 bài đầu (content + hình + câu hỏi), rồi export ───────
+python3 main.py sach.pdf --level "Lớp 6" --toc-file runs/sach/work/01_toc.json \
+    --export-json --limit 2
+#   → 📌 Stage 1–2 in mục lục: soát page range trong work/01_toc.json rồi Enter
+#   → Mở runs/sach/output/json/<bai-1>.json kiểm tra chất lượng
+#     (chưa ưng câu hỏi? thêm --redo-from 5, giữ nguyên --limit 2 để chỉ sinh lại câu hỏi)
+
+# ── B4. Ưng rồi → chạy HẾT cả sách (bỏ --limit; 2 bài đầu đã cache, 0 token lại) ─
+python3 main.py sach.pdf --level "Lớp 6" --toc-file runs/sach/work/01_toc.json \
+    --export-json
+```
+
+**Kết quả cuối** ở `runs/sach/output/`: `json/{topic_slug}.json` (**bộ JSON hoàn
+chỉnh từng bài** — thứ bạn cần), `topics.csv` + `multichoice.csv` + `images/` (đúng
+template import), `manifest.json`, và `review_report.md` nếu `--review`.
+
+> `--export-json` là **thuần code, 0 token** nên bật lúc nào cũng được — kể cả
+> chạy lại từ cache đã có. Dùng `--backend claude` thì thêm cờ đó vào các lệnh
+> `main.py` (và `toc_from_images.py` nếu OCR mục lục bằng Claude).
+
 ### Quy trình khuyến nghị (QC-friendly)
 
 1. **`--dry-run`** → xác nhận format khớp với hệ thống import của bạn.
@@ -91,6 +145,7 @@ topic N rồi mới sang N+1). Đứt giữa chừng (rate limit, hết quota, t
 **chỉ cần chạy lại đúng lệnh cũ**: topic đã hoàn chỉnh được bỏ qua, topic dở
 dang chạy tiếp đúng bước còn thiếu. Gặp lỗi hết quota ngày, tool báo rõ, export
 phần đã xong (partial) rồi thoát — quota free tier reset ~14–15h chiều giờ VN.
+(Backend claude hết hạn mức thì thoát **mã 42** — xem mục Claude bên dưới.)
 
 ### Mục lục chính xác 100% từ file có sẵn (0 token)
 
@@ -103,11 +158,131 @@ python3 build_toc.py sach.toc.txt --offset 2 --last-page 197 \
 
 # B) OCR ảnh/PDF trang mục lục -> toc.txt (kiểm tra tay) -> JSON:
 python3 toc_from_images.py toc_images/sach --out sach.toc.txt        # 1 request OCR
+#    ...OCR bằng subscription Claude thay vì Gemini:
+python3 toc_from_images.py toc_images/sach --backend claude --out sach.toc.txt
 python3 build_toc.py sach.toc.txt --offset 2 --last-page 197 --out runs/sach/work/01_toc.json
 
 # rồi trỏ pipeline vào file đã dựng:
 python3 main.py sach.pdf --toc-file runs/sach/work/01_toc.json --level "Lớp 6"
 ```
+
+`toc_from_images.py` nhận **cùng bộ cờ backend** như `main.py`
+(`--backend {gemini,claude}`, `--model`, `--interval`, `--dry-run`), thêm
+`--out`, `--offset`, `--last-page`, `--json-out` (ghi thẳng `01_toc.json` khi có
+đủ offset + last-page). `build_toc.py` là **thuần code 0 token**: `toc_txt`
+(vị trí) + `--offset` + `--last-page` + `--out` (đều bắt buộc), tự tính
+`page_end = trang bắt đầu bài kế − 1`.
+
+### Sinh TOC hàng loạt cho cả cây thư mục (`batch_toc.py`)
+
+Khi có **nhiều sách xếp theo lớp**, thay vì chạy từng file, trỏ `batch_toc.py`
+vào thư mục gốc. Nó quét đệ quy mọi `*.pdf` và sinh ra **một cây thư mục TOC
+tương ứng** (giữ nguyên cấu trúc), mỗi sách một file `01_toc.json`:
+
+```
+pdf/                          tocs/
+  lop6/                         lop6/
+    khtn.pdf        ─────►         khtn.toc.json
+    lich-su.pdf                    lich-su.toc.json
+  lop7/                         lop7/
+    toan.pdf                      toan.toc.json
+```
+
+```bash
+python3 batch_toc.py pdf                    # gemini (cần GEMINI_API_KEY)
+python3 batch_toc.py pdf --dry-run          # test KHÔNG cần API key (mock AI)
+python3 batch_toc.py pdf --backend claude   # dùng subscription Claude
+python3 batch_toc.py pdf --out tocs --also-txt --overwrite
+```
+
+- Nguồn mục lục theo đúng quy tắc `main.py`: PDF **có bookmark** → thuần code
+  0 token; **không có** → AI (Gemini/Claude) suy ra. Client AI chỉ khởi tạo khi
+  thực sự có sách thiếu bookmark, nên bộ sách toàn bookmark chạy **0 token**.
+- Mặc định **resume + validate**: file TOC đã có được **kiểm tra hợp lệ** (đúng
+  shape `01_toc.json`, có topic) rồi mới bỏ qua; file rỗng/hỏng do lần trước đứt
+  giữa chừng sẽ **tự sinh lại**. Dùng `--overwrite` để ép sinh lại tất cả. Một
+  file lỗi **không** làm dừng cả lô — cuối cùng in bảng tổng kết
+  (đã sinh / bỏ qua / lỗi) và thoát mã `1` nếu có lỗi.
+- Mỗi file `*.toc.json` dùng thẳng được cho pipeline:
+  `python3 main.py pdf/lop6/khtn.pdf --level "Lớp 6" --toc-file tocs/lop6/khtn.toc.json`.
+- `--also-txt` ghi kèm bản `.toc.txt` (định dạng `build_toc.py`, offset 0) để
+  soát/sửa tay khi cần.
+
+Bộ cờ dùng chung với `main.py`: `--backend {gemini,claude}`, `--model`,
+`--interval`, `--force-ai-toc`, `--dry-run`; thêm `--out`, `--suffix`,
+`--also-txt`, `--overwrite`.
+
+---
+
+## Dùng Claude thay cho Google API (backend claude)
+
+Thay vì gọi REST API của Gemini (tính hạn mức theo token), backend này gọi
+**Claude Code CLI** ngay trên máy bằng đúng phiên đăng nhập Claude Max/Pro của bạn.
+Mọi stage AI (content, câu hỏi, review, OCR mục lục) đều đi qua `claude -p` —
+**0đ phụ trội, không tính token, chỉ trừ vào hạn mức subscription**.
+
+### Điều kiện
+
+```bash
+claude login          # đăng nhập gói Max/Pro
+claude -p "xin chào"  # thử: trả lời được là OK
+```
+
+Nếu `claude` không có trong PATH, tool cảnh báo ngay khi khởi động. **Không cần**
+`GEMINI_API_KEY` (và không cần key reviewer Groq/OpenRouter).
+
+### Chạy
+
+```bash
+# Mặc định model sonnet:
+python3 main.py sach.pdf --level "Lớp 6" --backend claude
+
+# Đổi model (opus mạnh hơn, tốn hạn mức hơn):
+python3 main.py sach.pdf --level "Lớp 6" --backend claude --model opus
+
+# Review chéo model (reviewer tự dùng model KHÁC — xem dưới):
+python3 main.py sach.pdf --level "Lớp 6" --backend claude --review
+```
+
+> `--model` mặc định là `gemini-2.5-flash`. Khi bật `--backend claude`, nếu `--model`
+> vẫn là giá trị Gemini thì tool **tự đổi sang `sonnet`**. Truyền `sonnet`/`opus`
+> để chỉ định rõ.
+
+### Cơ chế hoạt động (bên trong)
+
+- **Cùng interface với `gemini.Gemini`** (`generate_json` / `generate_text` /
+  `pdf_part` / `image_part`), nên các stage KHÔNG phải sửa gì — chỉ thay client.
+- Mỗi lời gọi AI = **1 lần shell ra**:
+  `claude -p "<prompt>" --output-format json --model <model> --allowedTools Read --add-dir <tmp>`.
+- **PDF/ảnh KHÔNG nhúng vào prompt**: chúng được ghi ra file tạm, prompt chỉ chứa
+  đường dẫn + yêu cầu Claude **đọc bằng công cụ `Read`** (Read hỗ trợ cả PDF lẫn
+  ảnh). Nhờ vậy prompt luôn nhỏ, không đụng giới hạn độ dài dòng lệnh.
+- **Ép JSON**: các stage cần structured output kèm schema + yêu cầu "trả về DUY
+  NHẤT JSON". Output lỡ không parse được → tool **tự sửa 1 lần** rồi mới báo lỗi.
+- **Retry**: lỗi tạm thời retry tối đa 4 lần (backoff 5s→60s). Riêng lỗi **hết
+  hạn mức** thì không retry — nhường cho cơ chế resume.
+
+### Reviewer khi dùng Claude
+
+Bật `--review` với backend claude thì reviewer là **một model Claude KHÁC**
+(cross-model): content sinh bằng `sonnet` → reviewer dùng `opus` (và ngược lại),
+đọc được **PDF gốc** qua `Read` để đối chiếu. Lúc này cờ `--reviewer`
+(groq/openrouter/gemini-pro) bị bỏ qua — không cần key ngoài.
+
+### Hết hạn mức → tự dừng & resume
+
+Khi CLI báo hết hạn mức (usage/rate limit, "resets at", 429…), tool **export ngay
+phần các topic đã hoàn chỉnh** (partial) rồi **thoát mã 42** (để runner tự động
+phân biệt "tạm dừng chờ reset" với hoàn tất `0` / lỗi thật `1`). **Resume**: khi
+cửa sổ hạn mức reset, chạy lại **đúng lệnh cũ** — topic đã xong bị bỏ qua.
+
+### Lưu ý riêng của backend claude
+
+- **Mục lục**: nên dùng bookmark PDF hoặc `--toc-file` (dựng sẵn) thay vì để AI đọc
+  cả cuốn suy ra mục lục — vừa chính xác 100%, vừa tránh cho Claude Read cả PDF dài.
+- **Báo cáo token vẫn in** (lấy từ `usage` của CLI) để theo dõi mức tiêu thụ, nhưng
+  **bạn không bị tính tiền theo token** — chỉ là số liệu tham khảo.
+- Chạy **local/Cowork trên máy có Claude Code**; không dùng được trong CI không cài `claude`.
 
 ---
 
@@ -122,17 +297,23 @@ python3 main.py sach.pdf --toc-file runs/sach/work/01_toc.json --level "Lớp 6"
 | `--subject "..."` | rỗng | tên môn học ghi vào JSON bài học (vd `"Lịch sử và Địa lí"`) |
 | `--grade "6"` | tự suy từ `--level` | khối lớp ghi vào JSON (vd `"Lớp 6"` → `"6"`) |
 
+### Nguồn AI & tốc độ
+
+| Flag | Mặc định | Ý nghĩa |
+|---|---|---|
+| `--backend gemini\|claude` | `gemini` | nguồn AI: `gemini` (REST API, cần `GEMINI_API_KEY`) hoặc `claude` (Claude Code CLI `claude -p`, dùng **subscription** Max/Pro, không cần key, không tính token; hết hạn mức → thoát mã 42, chạy lại để resume) |
+| `--model NAME` | `gemini-2.5-flash` | model content/questions. Với `--backend claude`: giá trị Gemini tự đổi sang `sonnet`; truyền `sonnet`/`opus` để chỉ định rõ |
+| `--interval SEC` | `6.0` | giây nghỉ giữa 2 request (free tier ~10 RPM → 6s; 429 "theo phút" thì tăng lên 15) |
+| `--dry-run` | tắt | dùng MockGemini, **không cần API key** — kiểm tra pipeline & format output |
+
 ### Kiểm soát khối lượng & tốc độ (tiết kiệm quota)
 
 | Flag | Mặc định | Ý nghĩa |
 |---|---|---|
 | `--limit N` | `0` (làm hết) | CHỈ xử lý **N bài đầu** rồi export luôn — test nhanh bài 1–2. Cache giữ nguyên: bỏ cờ này chạy lại sẽ làm tiếp phần còn lại |
-| `--dry-run` | tắt | dùng MockGemini, **không cần API key** — kiểm tra pipeline & format output |
 | `--no-images` | tắt | bỏ stage ảnh cho nhẹ; lấy ảnh sau bằng cách chạy lại bỏ cờ này |
 | `--no-validate` | tắt | bỏ pass tự giải kiểm chứng đáp án (nhanh hơn, **không khuyến nghị**) |
-| `--interval SEC` | `6.0` | giây nghỉ giữa 2 request (free tier ~10 RPM → 6s; 429 "theo phút" thì tăng lên 15) |
 | `--dpi N` | `0` (tắt) | nén trang PDF **scan** độ phân giải cao về N dpi grayscale trước khi gửi → giảm token mạnh (khuyến nghị `110`). Có guard chống upscale: scan đã nhỏ thì tự giữ nguyên |
-| `--model NAME` | `gemini-2.5-flash` | model Gemini dùng cho content/questions |
 
 ### Hình minh hoạ
 
@@ -169,11 +350,12 @@ python3 main.py sach.pdf --toc-file runs/sach/work/01_toc.json --level "Lớp 6"
 | Flag | Mặc định | Ý nghĩa |
 |---|---|---|
 | `--review` | tắt | bật stage 6: model thứ hai thẩm định content + câu hỏi → `review_report.md` |
-| `--reviewer X` | `groq` | `groq` (Llama 3.3 70B, độc lập nhà cung cấp) / `openrouter` (DeepSeek R1 free) / `gemini-pro` (**duy nhất đối chiếu được PDF gốc** để kiểm faithfulness) |
+| `--reviewer X` | `groq` | (chỉ backend gemini) `groq` (Llama 3.3 70B, độc lập nhà cung cấp) / `openrouter` (DeepSeek R1 free) / `gemini-pro` (**duy nhất đối chiếu được PDF gốc**). Với `--backend claude`: bị bỏ qua, reviewer là model Claude khác (sonnet↔opus) |
 | `--review-fix` | tắt | tự loại câu hỏi bị review đánh `severity=high` (mặc định chỉ báo cáo, không tự xoá) |
 
-**Biến môi trường:** `GEMINI_API_KEY` (bắt buộc trừ `--dry-run`);
-`GROQ_API_KEY` / `OPENROUTER_API_KEY` (chỉ khi dùng reviewer tương ứng).
+**Biến môi trường:** `GEMINI_API_KEY` (backend gemini, bắt buộc trừ `--dry-run`;
+**không** cần cho backend claude); `GROQ_API_KEY` / `OPENROUTER_API_KEY` (chỉ khi
+dùng reviewer tương ứng). Có thể đặt trong file `.env` (chép từ `env.example`).
 
 ---
 
@@ -230,7 +412,8 @@ tài liệu vs field được bổ sung.
 Cuối mỗi phiên in bảng token theo tag (`content`/`questions`/`validate`/`review`/…),
 phiên này + cộng dồn; chi tiết ở `work/usage.json`. Dùng nó để tối ưu **bằng số
 liệu**: so tổng token trước/sau khi bật `--no-images`, hay xem `validate` chiếm
-bao nhiêu % trước khi cân nhắc bỏ.
+bao nhiêu % trước khi cân nhắc bỏ. (Backend claude vẫn in bảng này để tham khảo,
+dù không bị tính tiền theo token.)
 
 ## Quality checks thuần code (luôn bật, 0 token)
 
@@ -245,8 +428,12 @@ Chạy trên toàn bộ câu hỏi mỗi lần export, ghi ra console + `manifes
 
 ## Troubleshooting
 
-- **"HẾT QUOTA NGÀY"**: chạy lại chính lệnh cũ sau ~14–15h chiều giờ VN — resume tự lo.
+- **"HẾT QUOTA NGÀY" (Gemini)**: chạy lại chính lệnh cũ sau ~14–15h chiều giờ VN — resume tự lo.
 - **429 kèm hint "theo PHÚT"**: tăng `--interval 15`.
+- **Backend claude hết hạn mức (thoát mã 42)**: bình thường — đã export phần hoàn
+  chỉnh. Chờ cửa sổ subscription reset rồi chạy lại **đúng lệnh cũ** để resume.
+- **`Không tìm thấy lệnh claude trong PATH`**: cài Claude Code + `claude login`
+  (Max/Pro) trước khi dùng `--backend claude`.
 - **Mục lục sai / page range lệch**: sửa `work/01_toc.json` → `--redo-from 2`
   (hoặc dựng lại bằng `build_toc.py` + `--toc-file`).
 - **Cache content phiên bản cũ**: tool báo và yêu cầu `--redo-from 3`.
@@ -258,8 +445,9 @@ Chạy trên toàn bộ câu hỏi mỗi lần export, ghi ra console + `manifes
 ## Lưu ý dữ liệu
 
 Free tier của Google **có thể dùng dữ liệu gửi lên để cải thiện model** — không
-dùng cho tài liệu nội bộ/nhạy cảm. Khi cần: paid tier hoặc self-host (viết thêm
-client cùng interface trong `gemini.py`).
+dùng cho tài liệu nội bộ/nhạy cảm. Khi cần: paid tier, dùng **`--backend claude`**
+(gửi qua phiên Claude Code của bạn), hoặc self-host (viết thêm client cùng
+interface trong `gemini.py`).
 
 ---
 
@@ -290,6 +478,8 @@ agent chạy `main.py`, theo dõi log, trả `output/` về Drive.
   source ~/.zshrc
   echo $GEMINI_API_KEY   # phải in ra key
   ```
+
+  (Dùng `--backend claude` thì bỏ qua bước này — chỉ cần đã `claude login`.)
 
 - **Tạo cấu trúc vào/ra qua Google Drive.** Cài Google Drive for desktop rồi:
 
