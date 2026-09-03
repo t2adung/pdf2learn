@@ -173,6 +173,43 @@ python3 main.py sach.pdf --toc-file runs/sach/work/01_toc.json --level "Lớp 6"
 (vị trí) + `--offset` + `--last-page` + `--out` (đều bắt buộc), tự tính
 `page_end = trang bắt đầu bài kế − 1`.
 
+### Sinh TOC hàng loạt cho cả cây thư mục (`batch_toc.py`)
+
+Khi có **nhiều sách xếp theo lớp**, thay vì chạy từng file, trỏ `batch_toc.py`
+vào thư mục gốc. Nó quét đệ quy mọi `*.pdf` và sinh ra **một cây thư mục TOC
+tương ứng** (giữ nguyên cấu trúc), mỗi sách một file `01_toc.json`:
+
+```
+pdf/                          tocs/
+  lop6/                         lop6/
+    khtn.pdf        ─────►         khtn.toc.json
+    lich-su.pdf                    lich-su.toc.json
+  lop7/                         lop7/
+    toan.pdf                      toan.toc.json
+```
+
+```bash
+python3 batch_toc.py pdf                    # gemini (cần GEMINI_API_KEY)
+python3 batch_toc.py pdf --dry-run          # test KHÔNG cần API key (mock AI)
+python3 batch_toc.py pdf --backend claude   # dùng subscription Claude
+python3 batch_toc.py pdf --out tocs --also-txt --overwrite
+```
+
+- Nguồn mục lục theo đúng quy tắc `main.py`: PDF **có bookmark** → thuần code
+  0 token; **không có** → AI (Gemini/Claude) suy ra. Client AI chỉ khởi tạo khi
+  thực sự có sách thiếu bookmark, nên bộ sách toàn bookmark chạy **0 token**.
+- Mặc định **resume**: file TOC đã có được bỏ qua (dùng `--overwrite` để ép sinh
+  lại). Một file lỗi **không** làm dừng cả lô — cuối cùng in bảng tổng kết
+  (đã sinh / bỏ qua / lỗi) và thoát mã `1` nếu có lỗi.
+- Mỗi file `*.toc.json` dùng thẳng được cho pipeline:
+  `python3 main.py pdf/lop6/khtn.pdf --level "Lớp 6" --toc-file tocs/lop6/khtn.toc.json`.
+- `--also-txt` ghi kèm bản `.toc.txt` (định dạng `build_toc.py`, offset 0) để
+  soát/sửa tay khi cần.
+
+Bộ cờ dùng chung với `main.py`: `--backend {gemini,claude}`, `--model`,
+`--interval`, `--force-ai-toc`, `--dry-run`; thêm `--out`, `--suffix`,
+`--also-txt`, `--overwrite`.
+
 ---
 
 ## Dùng Claude thay cho Google API (backend claude)
