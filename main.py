@@ -218,7 +218,7 @@ def main():
     if toc is None:
         log("── Stage 1/7: Trích mục lục ──")
         from stage_toc import extract_toc
-        toc = extract_toc(args.pdf, client, force_ai=args.force_ai_toc)
+        toc = extract_toc(args.pdf, client, force_ai=args.force_ai_toc, dpi=args.dpi)
         save_json(caches[1], toc)
 
     # ---- Stage 2: Structure + slug ----

@@ -207,9 +207,14 @@ python3 batch_toc.py pdf --out tocs --also-txt --overwrite
   `python3 main.py pdf/lop6/khtn.pdf --level "Lớp 6" --toc-file tocs/lop6/khtn.toc.json`.
 - `--also-txt` ghi kèm bản `.toc.txt` (định dạng `build_toc.py`, offset 0) để
   soát/sửa tay khi cần.
+- **Sách scan nặng** (SGK scan độ phân giải cao) khi phải nhờ AI dễ bị Gemini
+  trả `HTTP 400 INVALID_ARGUMENT` vì ảnh trang quá lớn. `batch_toc.py` **mặc định
+  nén trang về `--dpi 110` grayscale trước khi gửi AI** (giữ nguyên số trang nên
+  page range vẫn đúng), vừa lọt giới hạn vừa đủ nét để OCR. PDF born-digital nhẹ
+  có thể tắt bằng `--dpi 0`. (`main.py` cũng nhận `--dpi` cho bước TOC của nó.)
 
 Bộ cờ dùng chung với `main.py`: `--backend {gemini,claude}`, `--model`,
-`--interval`, `--force-ai-toc`, `--dry-run`; thêm `--out`, `--suffix`,
+`--interval`, `--dpi`, `--force-ai-toc`, `--dry-run`; thêm `--out`, `--suffix`,
 `--also-txt`, `--overwrite`.
 
 ---

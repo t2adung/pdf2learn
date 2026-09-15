@@ -43,7 +43,11 @@ Yêu cầu:
 - Nếu tài liệu không chia chương, tạo 1 module duy nhất mang tên tài liệu."""
 
 
-def extract_toc(pdf_path, client, force_ai: bool = False) -> dict:
+def extract_toc(pdf_path, client, force_ai: bool = False, dpi: int = 0) -> dict:
+    """dpi>0: nén từng trang về grayscale ở độ phân giải đó TRƯỚC khi gửi AI
+    (giữ nguyên SỐ TRANG nên page range vẫn đúng). Cần cho sách scan nặng: PDF
+    scan độ phân giải cao dễ bị Gemini trả HTTP 400 INVALID_ARGUMENT vì ảnh quá
+    lớn — nén xuống ~110 dpi vừa lọt giới hạn vừa đủ nét để OCR."""
     doc = fitz.open(pdf_path)
     n_pages = doc.page_count
 
@@ -56,7 +60,14 @@ def extract_toc(pdf_path, client, force_ai: bool = False) -> dict:
     else:
         log("   --force-ai-toc: bỏ qua bookmark, dùng AI.")
 
-    pdf_bytes = pdf_path.read_bytes()
+    if dpi and dpi > 0:
+        from stage_content import cut_pages
+        log(f"   Nén trang scan về {dpi} dpi grayscale trước khi gửi AI "
+            f"({n_pages} trang)...")
+        pdf_bytes = cut_pages(doc, 1, n_pages, dpi=dpi)
+        log(f"   -> {len(pdf_bytes)/1e6:.1f}MB sau khi nén.")
+    else:
+        pdf_bytes = pdf_path.read_bytes()
     result = client.generate_json(
         [client.pdf_part(pdf_bytes, pdf_path.name), {"text": TOC_PROMPT}],
         TOC_SCHEMA, tag="toc")

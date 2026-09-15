@@ -127,7 +127,8 @@ def process_one(pdf_path: Path, out_json: Path, args, get_client) -> str:
 
     from stage_toc import extract_toc
     # PDF có bookmark -> extract_toc không dùng client; chỉ khởi tạo AI khi cần.
-    toc = extract_toc(pdf_path, get_client(), force_ai=args.force_ai_toc)
+    toc = extract_toc(pdf_path, get_client(), force_ai=args.force_ai_toc,
+                      dpi=args.dpi)
 
     n_mod = len(toc.get("modules", []))
     n_top = sum(len(m.get("topics", [])) for m in toc.get("modules", []))
@@ -163,6 +164,11 @@ def main():
     ap.add_argument("--model", default="gemini-2.5-flash")
     ap.add_argument("--interval", type=float, default=6.0,
                     help="giây giữa 2 request (free tier ~10 RPM -> 6s)")
+    ap.add_argument("--dpi", type=int, default=110,
+                    help="nén trang scan về N dpi grayscale TRƯỚC khi gửi AI "
+                         "(giữ nguyên số trang). Mặc định 110 — cần cho SGK scan "
+                         "nặng, tránh lỗi Gemini HTTP 400 INVALID_ARGUMENT. Đặt 0 "
+                         "để gửi nguyên bản (PDF born-digital nhẹ).")
     ap.add_argument("--force-ai-toc", action="store_true",
                     help="bỏ qua bookmark PDF, luôn dùng AI trích mục lục")
     ap.add_argument("--dry-run", action="store_true",
