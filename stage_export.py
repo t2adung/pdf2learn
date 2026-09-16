@@ -21,7 +21,7 @@ from render_markdown import render
 from utils import log, warn
 
 TOPIC_COLS = ["module_slug", "module_title", "topic_slug", "topic_title",
-              "order", "level", "content"]
+              "order", "level", "page_start", "content"]
 QUESTION_COLS = ["topic_slug", "question", "A", "B", "C", "D",
                  "correct_answer", "explanation_vi", "difficulty"]
 MIN_QUESTIONS = 3
@@ -82,6 +82,7 @@ def export(structure: list, content: dict, images: dict, questions: dict,
                 "topic_title": row["topic_title"],
                 "order": row["order"],
                 "level": row["level"],
+                "page_start": row["page_start"],
                 "content": _compose_content(row, content.get(slug, {}),
                                             images.get(slug, []),
                                             questions.get(slug, []),
