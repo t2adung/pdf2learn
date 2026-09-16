@@ -173,6 +173,43 @@ python3 main.py sach.pdf --toc-file runs/sach/work/01_toc.json --level "Lớp 6"
 (vị trí) + `--offset` + `--last-page` + `--out` (đều bắt buộc), tự tính
 `page_end = trang bắt đầu bài kế − 1`.
 
+### Nguồn là ẢNH thay vì PDF (`images_to_pdf.py`)
+
+Khi dữ liệu tải về là **ảnh từng trang sách** (mỗi trang 1 file `.png/.jpg`) thay
+vì PDF, dùng `images_to_pdf.py` để **ghép ảnh mỗi cuốn thành 1 PDF** đặt vào thư
+mục `pdf/` (giữ nguyên cấu trúc lớp). Sau đó chạy pipeline y như với PDF thật.
+
+```
+images/                              pdf/
+  lop-4/                               lop-4/
+    sgk-khoa-hoc-4/                       sgk-khoa-hoc-4.pdf
+      page-001.png    ───────►            sgk-toan-4-tap-mot.pdf
+      page-003.png                     lop-5/
+      ...                                 ...
+    sgk-toan-4-tap-mot/
+      page-001.png ...
+```
+
+```bash
+python3 images_to_pdf.py images --out pdf          # ghép ảnh -> pdf/
+python3 images_to_pdf.py images --out pdf --limit 2 --overwrite
+
+# rồi chạy pipeline như với PDF thật:
+python3 batch_toc.py pdf --out tocs --also-txt
+python3 main.py pdf/lop-4/sgk-khoa-hoc-4.pdf --level "Lớp 4" \
+    --toc-file tocs/lop-4/sgk-khoa-hoc-4.toc.json --yes   # topics.csv + multichoice.csv
+```
+
+- Mỗi thư mục con chứa ảnh = 1 cuốn; ảnh sắp theo **số trong tên file**
+  (`page-001`, `page-003`, ...) rồi ghép **liền tiếp** thành trang 1..K (chỗ
+  thiếu bị bỏ qua, không chèn trang trắng). File `_urls.json` bị bỏ qua.
+- **PDF nhẹ:** mặc định thu nhỏ ảnh về `--max-width 1600` px + nén JPEG
+  `--quality 80` (đủ nét để OCR, dung lượng nhỏ, upload nhanh, tránh lỗi Gemini
+  HTTP 400 với scan độ phân giải cao). `--max-width 0` giữ nguyên bản gốc;
+  `--gray` chuyển xám cho nhẹ thêm.
+- Mặc định **resume** (cuốn đã có PDF thì bỏ qua); `--overwrite` để ép ghép lại,
+  `--limit N` để test N cuốn đầu.
+
 ### Sinh TOC hàng loạt cho cả cây thư mục (`batch_toc.py`)
 
 Khi có **nhiều sách xếp theo lớp**, thay vì chạy từng file, trỏ `batch_toc.py`
