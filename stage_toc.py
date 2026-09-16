@@ -137,23 +137,28 @@ _TOC_PAGES_SCHEMA = {
 
 # Prompt đọc RIÊNG 1 trang mục lục — AI chỉ nhìn đúng 1 trang nên không bỏ sót
 # cột số trang (lỗi hay gặp khi gộp nhiều trang: trang thứ 2 bị điền lặp 1 số).
-TOC_PAGE_PROMPT = """Ảnh dưới đây là MỘT trang MỤC LỤC của sách.
+TOC_PAGE_PROMPT = """Ảnh dưới đây là MỘT trang MỤC LỤC của sách (có thể ghi 'Mục lục', 'Contents', 'Book map', hoặc là bảng liệt kê các Bài/Unit).
 
 CẤU TRÚC TRANG: trang này CÓ THỂ chia làm NHIỀU CỘT (trái sang phải). Hãy đọc HẾT cột bên TRÁI từ trên xuống dưới, RỒI MỚI sang cột bên PHẢI từ trên xuống dưới — trả kết quả theo đúng thứ tự đọc đó.
 
-Trích MỌI dòng:
-- modules = chương/phần/chủ đề/unit (dòng tiêu đề lớn, thường có màu nền đậm).
-- topics = bài/mục con; mỗi topic có page_printed = SỐ TRANG IN ở cột "Trang" của ĐÚNG dòng đó.
+Trích MỌI mục:
+- modules = chương/phần/chủ đề/unit-theme lớn (dòng tiêu đề lớn, thường có màu nền đậm hoặc IN HOA, vd "ME AND MY SCHOOL", "PHẦN MỘT...").
+- topics = bài/mục con (Bài 1, Unit 1, Starter, Review 1, ...); mỗi topic có page_printed = SỐ TRANG IN của mục đó.
+
+VỊ TRÍ SỐ TRANG — số trang của mỗi mục có thể ở 1 trong 2 chỗ:
+  (a) cột "Trang"/"Page" bên phải cùng dòng; HOẶC
+  (b) ghi NGAY trên dòng tiêu đề Unit/Phần dưới dạng "Page 44" / "Trang 44" (sách Tiếng Anh hay để kiểu này).
+Lấy đúng con số đó cho topic tương ứng.
 
 QUY TẮC SỐ TRANG (RẤT QUAN TRỌNG):
-- Đọc CHÍNH XÁC con số của TỪNG dòng. Số trang tăng dần theo thứ tự bài. TUYỆT ĐỐI KHÔNG lặp 1 số cho nhiều dòng, KHÔNG đoán, KHÔNG bỏ sót các dòng ở NỬA DƯỚI hay ở CỘT PHẢI.
-- Một tiêu đề bài dài có thể xuống 2 dòng nhưng CHỈ ứng với 1 số trang -> vẫn là 1 topic.
-- Nếu 1 dòng thực sự không đọc rõ số, đặt page_printed = 0 (KHÔNG lấy số của dòng khác).
+- Đọc CHÍNH XÁC con số của TỪNG mục. Số trang tăng dần theo thứ tự bài/unit. TUYỆT ĐỐI KHÔNG lặp 1 số cho nhiều mục, KHÔNG đoán, KHÔNG bỏ sót các mục ở NỬA DƯỚI hay ở CỘT PHẢI.
+- Một tiêu đề dài xuống 2 dòng nhưng CHỈ ứng 1 số trang -> vẫn là 1 topic.
+- Nếu 1 mục thực sự không đọc rõ số, đặt page_printed = 0 (KHÔNG lấy số của mục khác).
 
 QUY TẮC KHÁC:
-- Nếu trang này CHỈ có các bài (tiếp nối chương ở trang trước, không có tiêu đề chương mới), trả về modules = [{"title": "", "topics": [...]}].
+- Nếu trang này CHỈ có các bài (tiếp nối chương/theme ở trang trước, không có tiêu đề mới), trả về modules = [{"title": "", "topics": [...]}].
 - Giữ nguyên tiêu đề theo ngôn ngữ gốc.
-- BỎ QUA các dòng không phải bài học: "Mục lục"/"Contents"/"Trang", "Hướng dẫn sử dụng sách", "Lời nói đầu", "Bảng giải thích thuật ngữ", "Thuật ngữ", "Nguồn ảnh", phụ lục, đáp án."""
+- BỎ QUA các mục không phải bài học: "Mục lục"/"Contents"/"Book map"/"Trang"/"Page", "Hướng dẫn sử dụng sách", "Lời nói đầu", "Bảng giải thích thuật ngữ", "Thuật ngữ", "Wordlist", "Nguồn ảnh", phụ lục, đáp án, index."""
 
 
 def _subpdf(doc, page_indices, dpi: int, jpg_quality: int = 75) -> bytes:
@@ -252,9 +257,12 @@ def _find_toc_pages(doc, client, pages_idx, dpi: int) -> list:
     Trả list chỉ số trang PDF (0-based) theo thứ tự."""
     sub = _subpdf(doc, pages_idx, dpi, jpg_quality=80)
     prompt = (f"Tài liệu gồm {len(pages_idx)} trang (ảnh 1..{len(pages_idx)}) là "
-              f"các trang đầu/cuối của một cuốn sách. Ảnh nào là trang MỤC LỤC "
-              f"(danh sách bài kèm số trang; thường có tiêu đề 'Mục lục'/'Contents')? "
-              f"Trả JSON {{\"toc_pages\": [chỉ số ảnh 1-based]}}; nếu không có, trả [].")
+              f"các trang đầu/cuối của một cuốn sách. Ảnh nào là trang MỤC LỤC — "
+              f"tức trang LIỆT KÊ các bài/chủ đề/Unit kèm SỐ TRANG? Tiêu đề có thể "
+              f"là 'Mục lục', 'Contents', 'Table of Contents', 'Book map', hoặc chỉ "
+              f"là bảng liệt kê Unit/Bài kèm 'Page'/'Trang' (KHÔNG phải trang bài học "
+              f"bình thường). Trả JSON {{\"toc_pages\": [chỉ số ảnh 1-based]}}; "
+              f"nếu không có, trả [].")
     try:
         r = client.generate_json([client.pdf_part(sub, "front.pdf"),
                                   {"text": prompt}], _TOC_PAGES_SCHEMA, tag="toc")
