@@ -128,7 +128,8 @@ def process_one(pdf_path: Path, out_json: Path, args, get_client) -> str:
     from stage_toc import extract_toc
     # PDF có bookmark -> extract_toc không dùng client; chỉ khởi tạo AI khi cần.
     toc = extract_toc(pdf_path, get_client(), force_ai=args.force_ai_toc,
-                      dpi=args.dpi)
+                      dpi=args.dpi, smart=args.smart, front=args.front_pages,
+                      tail=args.tail_pages, max_offset=args.max_offset)
 
     n_mod = len(toc.get("modules", []))
     n_top = sum(len(m.get("topics", [])) for m in toc.get("modules", []))
@@ -171,6 +172,19 @@ def main():
                          "để gửi nguyên bản (PDF born-digital nhẹ).")
     ap.add_argument("--force-ai-toc", action="store_true",
                     help="bỏ qua bookmark PDF, luôn dùng AI trích mục lục")
+    ap.add_argument("--smart", dest="smart", action="store_true", default=True,
+                    help="[MẶC ĐỊNH] chế độ chính xác: chỉ đọc trang MỤC LỤC "
+                         "(đầu+cuối sách) + tự dò offset rồi dựng deterministic, "
+                         "thay vì bắt AI đọc cả cuốn (~2 call nhỏ/cuốn)")
+    ap.add_argument("--no-smart", dest="smart", action="store_false",
+                    help="tắt smart, quay lại cách gửi cả cuốn PDF cho AI")
+    ap.add_argument("--front-pages", type=int, default=12,
+                    help="[smart] số trang ĐẦU sách gửi để tìm mục lục (mặc định 12)")
+    ap.add_argument("--tail-pages", type=int, default=6,
+                    help="[smart] số trang CUỐI sách gửi kèm (SGK VN hay để mục "
+                         "lục ở cuối; mặc định 6)")
+    ap.add_argument("--max-offset", type=int, default=30,
+                    help="[smart] khoảng dò offset trang_in->trang_pdf (mặc định 30)")
     ap.add_argument("--dry-run", action="store_true",
                     help="dùng MockGemini, không cần API key (test pipeline/format)")
     args = ap.parse_args()

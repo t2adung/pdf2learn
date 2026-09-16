@@ -207,15 +207,26 @@ python3 batch_toc.py pdf --out tocs --also-txt --overwrite
   `python3 main.py pdf/lop6/khtn.pdf --level "Lớp 6" --toc-file tocs/lop6/khtn.toc.json`.
 - `--also-txt` ghi kèm bản `.toc.txt` (định dạng `build_toc.py`, offset 0) để
   soát/sửa tay khi cần.
+- **Chế độ smart (mặc định) — TOC chính xác mà vẫn tự động.** Thay vì bắt AI đọc
+  cả trăm trang một lần (hay bịa/lệch số trang), smart chỉ đọc **trang MỤC LỤC**
+  (một ít trang đầu + cuối sách — SGK Việt Nam hay để mục lục ở cuối), lấy danh
+  sách bài kèm **số trang IN**, rồi **tự dò offset** (in → PDF) bằng 1 request
+  định vị bài đầu tiên, cuối cùng dựng `page_start/page_end` **deterministic**.
+  Chỉ ~2 request nhỏ/cuốn, chính xác cao hơn nhiều. Nếu không tìm thấy mục lục ở
+  đầu/cuối, tự động fallback về cách đọc cả cuốn. Tinh chỉnh: `--front-pages`,
+  `--tail-pages`, `--max-offset`; tắt bằng `--no-smart`.
 - **Sách scan nặng** (SGK scan độ phân giải cao) khi phải nhờ AI dễ bị Gemini
   trả `HTTP 400 INVALID_ARGUMENT` vì ảnh trang quá lớn. `batch_toc.py` **mặc định
   nén trang về `--dpi 110` grayscale trước khi gửi AI** (giữ nguyên số trang nên
   page range vẫn đúng), vừa lọt giới hạn vừa đủ nét để OCR. PDF born-digital nhẹ
   có thể tắt bằng `--dpi 0`. (`main.py` cũng nhận `--dpi` cho bước TOC của nó.)
+- Vẫn nên dùng `--also-txt` để có bản `.toc.txt` soát nhanh; cuốn nào offset lệch
+  chỉ cần sửa `.toc.txt` rồi dựng lại bằng `build_toc.py` (0 token).
 
 Bộ cờ dùng chung với `main.py`: `--backend {gemini,claude}`, `--model`,
 `--interval`, `--dpi`, `--force-ai-toc`, `--dry-run`; thêm `--out`, `--suffix`,
-`--also-txt`, `--overwrite`.
+`--also-txt`, `--overwrite`, `--smart/--no-smart`, `--front-pages`,
+`--tail-pages`, `--max-offset`.
 
 ---
 
