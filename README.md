@@ -207,14 +207,24 @@ python3 batch_toc.py pdf --out tocs --also-txt --overwrite
   `python3 main.py pdf/lop6/khtn.pdf --level "Lớp 6" --toc-file tocs/lop6/khtn.toc.json`.
 - `--also-txt` ghi kèm bản `.toc.txt` (định dạng `build_toc.py`, offset 0) để
   soát/sửa tay khi cần.
-- **Chế độ smart (mặc định) — TOC chính xác mà vẫn tự động.** Thay vì bắt AI đọc
-  cả trăm trang một lần (hay bịa/lệch số trang), smart chỉ đọc **trang MỤC LỤC**
-  (một ít trang đầu + cuối sách — SGK Việt Nam hay để mục lục ở cuối), lấy danh
-  sách bài kèm **số trang IN**, rồi **tự dò offset** (in → PDF) bằng 1 request
-  định vị bài đầu tiên, cuối cùng dựng `page_start/page_end` **deterministic**.
-  Chỉ ~2 request nhỏ/cuốn, chính xác cao hơn nhiều. Nếu không tìm thấy mục lục ở
-  đầu/cuối, tự động fallback về cách đọc cả cuốn. Tinh chỉnh: `--front-pages`,
-  `--tail-pages`, `--max-offset`; tắt bằng `--no-smart`.
+- **Chế độ smart (mặc định) — rule mục lục, chính xác mà vẫn tự động.** Thay vì
+  bắt AI đọc cả trăm trang một lần (hay bịa/lệch/lặp số trang), smart chạy đúng
+  rule sau:
+  1. Đọc **`--front-pages` trang đầu** (mặc định **13**) ở **`--toc-dpi` cao**
+     (mặc định 200 — để đọc rõ CỘT SỐ TRANG) → OCR mục lục lấy `title` +
+     **số trang IN** của từng bài.
+  2. `page_start = số_trang_in + --cover-offset` (mặc định **+1** cho trang bìa).
+  3. `page_end = page_start của bài kế − 1` (bài cuối = hết PDF).
+  4. Dựng `01_toc.json` (và `.toc.txt` nếu `--also-txt`) **deterministic** — chỉ
+     **1 request/cuốn**.
+
+  Nếu AI đọc cột số trang bất thường (giảm dần / lặp 1 số cho nhiều bài — lỗi hay
+  gặp ở nửa dưới mục lục), tool **in cảnh báo** để bạn mở `.toc.txt` sửa tay. Nếu
+  không thấy mục lục trong các trang đầu, tự fallback đọc cả cuốn.
+  - `--tail-pages N`: gửi kèm N trang cuối (khi mục lục nằm ở cuối sách).
+  - `--auto-offset`: thay `--cover-offset` cố định bằng 1 lần AI tự dò offset
+    (định vị bài đầu tiên) — dùng khi front-matter mỗi sách một khác.
+  - `--no-smart`: quay lại cách đọc cả cuốn.
 - **Sách scan nặng** (SGK scan độ phân giải cao) khi phải nhờ AI dễ bị Gemini
   trả `HTTP 400 INVALID_ARGUMENT` vì ảnh trang quá lớn. `batch_toc.py` **mặc định
   nén trang về `--dpi 110` grayscale trước khi gửi AI** (giữ nguyên số trang nên
@@ -226,7 +236,7 @@ python3 batch_toc.py pdf --out tocs --also-txt --overwrite
 Bộ cờ dùng chung với `main.py`: `--backend {gemini,claude}`, `--model`,
 `--interval`, `--dpi`, `--force-ai-toc`, `--dry-run`; thêm `--out`, `--suffix`,
 `--also-txt`, `--overwrite`, `--smart/--no-smart`, `--front-pages`,
-`--tail-pages`, `--max-offset`.
+`--tail-pages`, `--toc-dpi`, `--cover-offset`, `--auto-offset`, `--max-offset`.
 
 ---
 

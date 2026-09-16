@@ -129,7 +129,9 @@ def process_one(pdf_path: Path, out_json: Path, args, get_client) -> str:
     # PDF có bookmark -> extract_toc không dùng client; chỉ khởi tạo AI khi cần.
     toc = extract_toc(pdf_path, get_client(), force_ai=args.force_ai_toc,
                       dpi=args.dpi, smart=args.smart, front=args.front_pages,
-                      tail=args.tail_pages, max_offset=args.max_offset)
+                      tail=args.tail_pages, cover_offset=args.cover_offset,
+                      auto_offset=args.auto_offset, toc_dpi=args.toc_dpi,
+                      max_offset=args.max_offset)
 
     n_mod = len(toc.get("modules", []))
     n_top = sum(len(m.get("topics", [])) for m in toc.get("modules", []))
@@ -173,18 +175,28 @@ def main():
     ap.add_argument("--force-ai-toc", action="store_true",
                     help="bỏ qua bookmark PDF, luôn dùng AI trích mục lục")
     ap.add_argument("--smart", dest="smart", action="store_true", default=True,
-                    help="[MẶC ĐỊNH] chế độ chính xác: chỉ đọc trang MỤC LỤC "
-                         "(đầu+cuối sách) + tự dò offset rồi dựng deterministic, "
-                         "thay vì bắt AI đọc cả cuốn (~2 call nhỏ/cuốn)")
+                    help="[MẶC ĐỊNH] rule mục lục: đọc trang đầu để OCR mục lục -> "
+                         "title + số trang in -> page_start = trang_in + cover-offset, "
+                         "page_end = trang bài kế - 1. Dựng deterministic (1 call/cuốn).")
     ap.add_argument("--no-smart", dest="smart", action="store_false",
                     help="tắt smart, quay lại cách gửi cả cuốn PDF cho AI")
-    ap.add_argument("--front-pages", type=int, default=12,
-                    help="[smart] số trang ĐẦU sách gửi để tìm mục lục (mặc định 12)")
-    ap.add_argument("--tail-pages", type=int, default=6,
-                    help="[smart] số trang CUỐI sách gửi kèm (SGK VN hay để mục "
-                         "lục ở cuối; mặc định 6)")
+    ap.add_argument("--front-pages", type=int, default=13,
+                    help="[smart] số trang ĐẦU sách dùng để đọc mục lục (mặc định 13)")
+    ap.add_argument("--tail-pages", type=int, default=0,
+                    help="[smart] số trang CUỐI gửi kèm (mặc định 0; đặt >0 nếu mục "
+                         "lục nằm ở cuối sách)")
+    ap.add_argument("--toc-dpi", type=int, default=200,
+                    help="[smart] độ phân giải render trang mục lục để đọc rõ cột "
+                         "số trang (mặc định 200 — cao hơn --dpi vì chỉ vài trang)")
+    ap.add_argument("--cover-offset", type=int, default=1,
+                    help="[smart] cộng vào SỐ TRANG IN để ra trang PDF (mặc định +1 "
+                         "cho trang bìa). page_start = trang_in + cover-offset.")
+    ap.add_argument("--auto-offset", action="store_true",
+                    help="[smart] thay cover-offset cố định bằng 1 lần AI tự dò "
+                         "offset (định vị bài đầu tiên); dùng khi front-matter không "
+                         "cố định")
     ap.add_argument("--max-offset", type=int, default=30,
-                    help="[smart] khoảng dò offset trang_in->trang_pdf (mặc định 30)")
+                    help="[smart] khoảng dò khi --auto-offset (mặc định 30)")
     ap.add_argument("--dry-run", action="store_true",
                     help="dùng MockGemini, không cần API key (test pipeline/format)")
     args = ap.parse_args()

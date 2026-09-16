@@ -44,16 +44,19 @@ Yêu cầu:
 
 
 def extract_toc(pdf_path, client, force_ai: bool = False, dpi: int = 0,
-                smart: bool = False, front: int = 12, tail: int = 6,
-                max_offset: int = 30) -> dict:
+                smart: bool = False, front: int = 13, tail: int = 0,
+                cover_offset: int = 1, auto_offset: bool = False,
+                toc_dpi: int = 200, max_offset: int = 30) -> dict:
     """dpi>0: nén từng trang về grayscale ở độ phân giải đó TRƯỚC khi gửi AI
     (giữ nguyên SỐ TRANG nên page range vẫn đúng). Cần cho sách scan nặng: PDF
     scan độ phân giải cao dễ bị Gemini trả HTTP 400 INVALID_ARGUMENT vì ảnh quá
     lớn — nén xuống ~110 dpi vừa lọt giới hạn vừa đủ nét để OCR.
 
-    smart=True: KHÔNG gửi cả cuốn. Chỉ đọc trang MỤC LỤC (đầu + cuối sách) để lấy
-    danh sách bài kèm SỐ TRANG IN, tự dò offset (in->PDF) rồi dựng deterministic
-    — chính xác hơn nhiều so với bắt AI đọc cả trăm trang một lần."""
+    smart=True (rule mục lục): chỉ đọc `front` TRANG ĐẦU (mặc định 13) ở độ phân
+    giải cao `toc_dpi` để OCR mục lục -> lấy tiêu đề + SỐ TRANG IN của từng bài.
+    page_start = trang_in + cover_offset (mặc định +1 cho trang bìa);
+    page_end = trang_start của bài kế - 1 (bài cuối = hết PDF). Dựng deterministic.
+    auto_offset=True: thay cover_offset cố định bằng 1 lần dò offset qua AI."""
     doc = fitz.open(pdf_path)
     n_pages = doc.page_count
 
@@ -67,12 +70,13 @@ def extract_toc(pdf_path, client, force_ai: bool = False, dpi: int = 0,
         log("   --force-ai-toc: bỏ qua bookmark, dùng AI.")
 
     if smart:
-        smart_toc = _extract_toc_smart(doc, pdf_path, client,
-                                       dpi=dpi or 110, front=front, tail=tail,
+        smart_toc = _extract_toc_smart(doc, pdf_path, client, front=front,
+                                       tail=tail, cover_offset=cover_offset,
+                                       auto_offset=auto_offset, toc_dpi=toc_dpi,
                                        max_offset=max_offset)
         if smart_toc is not None:
             return smart_toc
-        warn("   [smart] Không tìm thấy mục lục ở đầu/cuối -> fallback đọc cả cuốn.")
+        warn("   [smart] Không tìm thấy mục lục -> fallback đọc cả cuốn.")
 
     if dpi and dpi > 0:
         from stage_content import cut_pages
@@ -119,12 +123,19 @@ TOC_LIST_SCHEMA = {
     "required": ["modules"],
 }
 
-TOC_LIST_PROMPT = """Các ảnh dưới đây là MỘT SỐ TRANG (đầu và/hoặc cuối) của một cuốn sách giáo dục — trong đó CÓ trang MỤC LỤC.
-Nhiệm vụ: tìm TRANG MỤC LỤC và trích ra cấu trúc:
-- modules = chương/phần lớn; mỗi module có topics = các bài học/mục con.
-- page_printed = SỐ TRANG IN ghi cạnh mỗi bài TRONG MỤC LỤC (con số của cuốn sách, KHÔNG phải thứ tự ảnh).
-Yêu cầu:
-- CHỈ lấy bài học chính. Bỏ qua: bìa, lời nói đầu, chính trang mục lục, phụ lục, đáp án, bảng tra cứu, giải thích thuật ngữ.
+TOC_LIST_PROMPT = """Các ảnh dưới đây là những TRANG ĐẦU của một cuốn sách giáo dục — trong đó CÓ trang MỤC LỤC (Contents / Mục lục).
+Nhiệm vụ: đọc TRANG MỤC LỤC và trích ra cấu trúc:
+- modules = chương/phần/unit lớn; mỗi module có topics = các bài học/mục con.
+- page_printed = SỐ TRANG IN ghi cạnh mỗi mục trong mục lục (con số ở CỘT BÊN PHẢI mỗi dòng).
+
+QUY TẮC ĐỌC SỐ TRANG (CỰC KỲ QUAN TRỌNG):
+- Đọc CHÍNH XÁC con số ở cuối MỖI dòng. Mỗi mục thường có số trang KHÁC nhau và TĂNG DẦN từ trên xuống.
+- TUYỆT ĐỐI KHÔNG lặp lại cùng một số cho nhiều mục, KHÔNG đoán, KHÔNG bỏ sót các mục ở NỬA DƯỚI mục lục.
+- Nếu mục lục dài quá 1 trang, đọc HẾT tất cả các trang mục lục có trong ảnh.
+- Nếu một dòng thật sự không có số trang / đọc không rõ, đặt page_printed = 0 (KHÔNG được điền số của dòng khác).
+
+QUY TẮC KHÁC:
+- CHỈ lấy bài học/mục chính. Bỏ qua: bìa, lời nói đầu, chính trang mục lục, phụ lục, đáp án, bảng tra cứu, giải thích thuật ngữ.
 - Giữ nguyên tiêu đề theo đúng ngôn ngữ gốc.
 - Nếu sách không chia chương, tạo 1 module duy nhất mang tên tài liệu.
 - Nếu trong các ảnh KHÔNG có trang mục lục, trả về {"modules": []}."""
@@ -136,14 +147,15 @@ _OFFSET_SCHEMA = {
 }
 
 
-def _subpdf(doc, page_indices, dpi: int) -> bytes:
+def _subpdf(doc, page_indices, dpi: int, jpg_quality: int = 75) -> bytes:
     """Dựng 1 PDF nhỏ chỉ gồm các trang (0-based) chỉ định; dpi>0 -> nén grayscale.
-    Dùng pdf_part nên chạy được cho cả backend gemini lẫn claude."""
+    Dùng pdf_part nên chạy được cho cả backend gemini lẫn claude.
+    Trang mục lục nên render dpi cao + quality cao để đọc rõ CỘT SỐ TRANG."""
     sub = fitz.open()
     for pno in page_indices:
         if dpi and dpi > 0:
             pix = doc[pno].get_pixmap(dpi=dpi, colorspace=fitz.csGRAY)
-            jpg = pix.tobytes("jpeg", jpg_quality=75)
+            jpg = pix.tobytes("jpeg", jpg_quality=jpg_quality)
             page = sub.new_page(width=pix.width, height=pix.height)
             page.insert_image(page.rect, stream=jpg)
         else:
@@ -151,6 +163,22 @@ def _subpdf(doc, page_indices, dpi: int) -> bytes:
     data = sub.tobytes(garbage=3, deflate=True)
     sub.close()
     return data
+
+
+def _warn_bad_printed(flat: list) -> None:
+    """Cảnh báo khi cột SỐ TRANG do AI đọc bị đáng ngờ (lỗi hay gặp: AI đọc sót
+    nửa dưới mục lục rồi lặp lại 1 con số cho mọi bài). Không sửa, chỉ báo để
+    người dùng mở .toc.txt kiểm tra."""
+    pages = [t["page_printed"] for t in flat if isinstance(t.get("page_printed"), int)]
+    if len(pages) < 3:
+        return
+    from collections import Counter
+    drops = sum(1 for i in range(1, len(pages)) if pages[i] < pages[i - 1])
+    dup_run = max(Counter(pages).values())
+    if drops or dup_run >= 3:
+        warn(f"   [smart] ⚠ Cột số trang mục lục đáng ngờ "
+             f"(giảm {drops} lần, 1 số bị lặp tới {dup_run} mục) — AI có thể đã đọc "
+             f"sót nửa dưới mục lục. HÃY MỞ .toc.txt kiểm tra/sửa tay!")
 
 
 def _detect_offset(doc, client, anchor: dict, n_pages: int,
@@ -210,17 +238,20 @@ def _build_from_printed(modules, offset: int, n_pages: int) -> dict:
     return {"modules": out_mods}
 
 
-def _extract_toc_smart(doc, pdf_path, client, dpi: int, front: int,
-                       tail: int, max_offset: int):
-    """Đọc trang mục lục (đầu + cuối) -> list bài + trang IN -> dò offset ->
+def _extract_toc_smart(doc, pdf_path, client, front: int, tail: int,
+                       cover_offset: int, auto_offset: bool, toc_dpi: int,
+                       max_offset: int):
+    """Rule mục lục: đọc `front` trang đầu (+`tail` trang cuối nếu >0) ở độ phân
+    giải cao -> list bài + SỐ TRANG IN -> áp offset (cover cố định hoặc tự dò) ->
     dựng deterministic. Trả None nếu không thấy mục lục (để caller fallback)."""
     n = doc.page_count
     front_idx = list(range(0, min(front, n)))
-    tail_idx = [p for p in range(max(0, n - tail), n) if p not in front_idx]
+    tail_idx = [p for p in range(max(0, n - tail), n) if p not in front_idx] if tail else []
     pages_idx = front_idx + tail_idx
-    log(f"   [smart] Đọc mục lục từ {len(pages_idx)} trang (đầu {len(front_idx)} + "
-        f"cuối {len(tail_idx)}) thay vì cả {n} trang.")
-    toc_pdf = _subpdf(doc, pages_idx, dpi)
+    log(f"   [smart] Đọc {len(front_idx)} trang đầu"
+        + (f" + {len(tail_idx)} trang cuối" if tail_idx else "")
+        + f" ở {toc_dpi} dpi để đọc mục lục (thay vì cả {n} trang).")
+    toc_pdf = _subpdf(doc, pages_idx, toc_dpi, jpg_quality=85)
     listing = client.generate_json(
         [client.pdf_part(toc_pdf, f"{pdf_path.stem}-mucluc.pdf"),
          {"text": TOC_LIST_PROMPT}], TOC_LIST_SCHEMA, tag="toc")
@@ -228,15 +259,21 @@ def _extract_toc_smart(doc, pdf_path, client, dpi: int, front: int,
     if not modules:
         return None
 
-    anchor = next((t for m in modules for t in m["topics"]
-                   if isinstance(t.get("page_printed"), int)
-                   and t["page_printed"] > 0), None)
-    if anchor is None:
-        # AI đọc được mục lục nhưng không kèm SỐ TRANG IN nào -> không dựng được
-        # page range; để caller fallback đọc cả cuốn.
+    flat_in = [t for m in modules for t in m["topics"]
+               if isinstance(t.get("page_printed"), int) and t["page_printed"] > 0]
+    if not flat_in:
+        # AI đọc được mục lục nhưng không kèm SỐ TRANG IN nào -> fallback.
         return None
-    offset = _detect_offset(doc, client, anchor, n, max_offset, dpi)
-    log(f"   [smart] offset = {offset} (trang_pdf = trang_in + {offset}).")
+    _warn_bad_printed(flat_in)
+
+    if auto_offset:
+        offset = _detect_offset(doc, client, flat_in[0], n, max_offset, toc_dpi)
+        log(f"   [smart] offset (auto) = {offset} (trang_pdf = trang_in + {offset}).")
+    else:
+        offset = cover_offset
+        log(f"   [smart] offset (cover cố định) = +{offset} "
+            f"(trang_pdf = trang_in + {offset}).")
+
     toc = _build_from_printed(modules, offset, n)
     n_top = sum(len(m["topics"]) for m in toc["modules"])
     if n_top == 0:
