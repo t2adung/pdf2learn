@@ -123,28 +123,37 @@ TOC_LIST_SCHEMA = {
     "required": ["modules"],
 }
 
-TOC_LIST_PROMPT = """Các ảnh dưới đây là những TRANG ĐẦU của một cuốn sách giáo dục — trong đó CÓ trang MỤC LỤC (Contents / Mục lục).
-Nhiệm vụ: đọc TRANG MỤC LỤC và trích ra cấu trúc:
-- modules = chương/phần/unit lớn; mỗi module có topics = các bài học/mục con.
-- page_printed = SỐ TRANG IN ghi cạnh mỗi mục trong mục lục (con số ở CỘT BÊN PHẢI mỗi dòng).
-
-QUY TẮC ĐỌC SỐ TRANG (CỰC KỲ QUAN TRỌNG):
-- Đọc CHÍNH XÁC con số ở cuối MỖI dòng. Mỗi mục thường có số trang KHÁC nhau và TĂNG DẦN từ trên xuống.
-- TUYỆT ĐỐI KHÔNG lặp lại cùng một số cho nhiều mục, KHÔNG đoán, KHÔNG bỏ sót các mục ở NỬA DƯỚI mục lục.
-- Nếu mục lục dài quá 1 trang, đọc HẾT tất cả các trang mục lục có trong ảnh.
-- Nếu một dòng thật sự không có số trang / đọc không rõ, đặt page_printed = 0 (KHÔNG được điền số của dòng khác).
-
-QUY TẮC KHÁC:
-- CHỈ lấy bài học/mục chính. Bỏ qua: bìa, lời nói đầu, chính trang mục lục, phụ lục, đáp án, bảng tra cứu, giải thích thuật ngữ.
-- Giữ nguyên tiêu đề theo đúng ngôn ngữ gốc.
-- Nếu sách không chia chương, tạo 1 module duy nhất mang tên tài liệu.
-- Nếu trong các ảnh KHÔNG có trang mục lục, trả về {"modules": []}."""
-
 _OFFSET_SCHEMA = {
     "type": "object",
     "properties": {"page_pdf": {"type": "integer"}},
     "required": ["page_pdf"],
 }
+
+_TOC_PAGES_SCHEMA = {
+    "type": "object",
+    "properties": {"toc_pages": {"type": "array", "items": {"type": "integer"}}},
+    "required": ["toc_pages"],
+}
+
+# Prompt đọc RIÊNG 1 trang mục lục — AI chỉ nhìn đúng 1 trang nên không bỏ sót
+# cột số trang (lỗi hay gặp khi gộp nhiều trang: trang thứ 2 bị điền lặp 1 số).
+TOC_PAGE_PROMPT = """Ảnh dưới đây là MỘT trang MỤC LỤC của sách.
+
+CẤU TRÚC TRANG: trang này CÓ THỂ chia làm NHIỀU CỘT (trái sang phải). Hãy đọc HẾT cột bên TRÁI từ trên xuống dưới, RỒI MỚI sang cột bên PHẢI từ trên xuống dưới — trả kết quả theo đúng thứ tự đọc đó.
+
+Trích MỌI dòng:
+- modules = chương/phần/chủ đề/unit (dòng tiêu đề lớn, thường có màu nền đậm).
+- topics = bài/mục con; mỗi topic có page_printed = SỐ TRANG IN ở cột "Trang" của ĐÚNG dòng đó.
+
+QUY TẮC SỐ TRANG (RẤT QUAN TRỌNG):
+- Đọc CHÍNH XÁC con số của TỪNG dòng. Số trang tăng dần theo thứ tự bài. TUYỆT ĐỐI KHÔNG lặp 1 số cho nhiều dòng, KHÔNG đoán, KHÔNG bỏ sót các dòng ở NỬA DƯỚI hay ở CỘT PHẢI.
+- Một tiêu đề bài dài có thể xuống 2 dòng nhưng CHỈ ứng với 1 số trang -> vẫn là 1 topic.
+- Nếu 1 dòng thực sự không đọc rõ số, đặt page_printed = 0 (KHÔNG lấy số của dòng khác).
+
+QUY TẮC KHÁC:
+- Nếu trang này CHỈ có các bài (tiếp nối chương ở trang trước, không có tiêu đề chương mới), trả về modules = [{"title": "", "topics": [...]}].
+- Giữ nguyên tiêu đề theo ngôn ngữ gốc.
+- BỎ QUA các dòng không phải bài học: "Mục lục"/"Contents"/"Trang", "Hướng dẫn sử dụng sách", "Lời nói đầu", "Bảng giải thích thuật ngữ", "Thuật ngữ", "Nguồn ảnh", phụ lục, đáp án."""
 
 
 def _subpdf(doc, page_indices, dpi: int, jpg_quality: int = 75) -> bytes:
@@ -238,24 +247,74 @@ def _build_from_printed(modules, offset: int, n_pages: int) -> dict:
     return {"modules": out_mods}
 
 
+def _find_toc_pages(doc, client, pages_idx, dpi: int) -> list:
+    """1 call: xác định trong các trang ứng viên, trang nào là MỤC LỤC.
+    Trả list chỉ số trang PDF (0-based) theo thứ tự."""
+    sub = _subpdf(doc, pages_idx, dpi, jpg_quality=80)
+    prompt = (f"Tài liệu gồm {len(pages_idx)} trang (ảnh 1..{len(pages_idx)}) là "
+              f"các trang đầu/cuối của một cuốn sách. Ảnh nào là trang MỤC LỤC "
+              f"(danh sách bài kèm số trang; thường có tiêu đề 'Mục lục'/'Contents')? "
+              f"Trả JSON {{\"toc_pages\": [chỉ số ảnh 1-based]}}; nếu không có, trả [].")
+    try:
+        r = client.generate_json([client.pdf_part(sub, "front.pdf"),
+                                  {"text": prompt}], _TOC_PAGES_SCHEMA, tag="toc")
+        picked = [pages_idx[i - 1] for i in r.get("toc_pages", [])
+                  if isinstance(i, int) and 1 <= i <= len(pages_idx)]
+    except Exception as e:
+        warn(f"   [smart] xác định trang mục lục lỗi ({e}).")
+        return []
+    seen, out = set(), []
+    for p in picked:
+        if p not in seen:
+            seen.add(p); out.append(p)
+    return out
+
+
+def _read_toc_page(doc, client, pno: int, dpi: int) -> list:
+    """Đọc RIÊNG 1 trang mục lục -> list module (mỗi module có topics + page_printed)."""
+    sub = _subpdf(doc, [pno], dpi, jpg_quality=88)
+    r = client.generate_json([client.pdf_part(sub, f"toc-p{pno+1}.pdf"),
+                              {"text": TOC_PAGE_PROMPT}], TOC_LIST_SCHEMA, tag="toc")
+    return [m for m in r.get("modules", []) if m.get("topics")]
+
+
+def _merge_modules(acc: list, incoming: list) -> None:
+    """Ghép module đọc từ trang sau vào danh sách tích luỹ. Module không có tiêu đề
+    (tiếp nối chương trang trước) hoặc trùng tên chương cuối -> gộp topics."""
+    for m in incoming:
+        title = str(m.get("title", "")).strip()
+        if acc and (not title or title == acc[-1]["title"]):
+            acc[-1]["topics"].extend(m["topics"])
+        else:
+            acc.append({"title": title or "Nội dung chính",
+                        "topics": list(m["topics"])})
+
+
 def _extract_toc_smart(doc, pdf_path, client, front: int, tail: int,
                        cover_offset: int, auto_offset: bool, toc_dpi: int,
                        max_offset: int):
-    """Rule mục lục: đọc `front` trang đầu (+`tail` trang cuối nếu >0) ở độ phân
-    giải cao -> list bài + SỐ TRANG IN -> áp offset (cover cố định hoặc tự dò) ->
-    dựng deterministic. Trả None nếu không thấy mục lục (để caller fallback)."""
+    """Rule mục lục: xác định các trang mục lục trong `front` trang đầu (+`tail`
+    trang cuối nếu >0), rồi đọc TỪNG trang mục lục RIÊNG (tránh lỗi AI bỏ cột số
+    trang ở trang thứ 2), ghép lại -> áp offset -> dựng deterministic.
+    Trả None nếu không thấy mục lục (để caller fallback)."""
     n = doc.page_count
     front_idx = list(range(0, min(front, n)))
     tail_idx = [p for p in range(max(0, n - tail), n) if p not in front_idx] if tail else []
     pages_idx = front_idx + tail_idx
-    log(f"   [smart] Đọc {len(front_idx)} trang đầu"
+    log(f"   [smart] Tìm trang mục lục trong {len(front_idx)} trang đầu"
         + (f" + {len(tail_idx)} trang cuối" if tail_idx else "")
-        + f" ở {toc_dpi} dpi để đọc mục lục (thay vì cả {n} trang).")
-    toc_pdf = _subpdf(doc, pages_idx, toc_dpi, jpg_quality=85)
-    listing = client.generate_json(
-        [client.pdf_part(toc_pdf, f"{pdf_path.stem}-mucluc.pdf"),
-         {"text": TOC_LIST_PROMPT}], TOC_LIST_SCHEMA, tag="toc")
-    modules = [m for m in listing.get("modules", []) if m.get("topics")]
+        + f" (thay vì cả {n} trang).")
+
+    toc_pages = _find_toc_pages(doc, client, pages_idx, toc_dpi)
+    if not toc_pages:
+        return None
+    log(f"   [smart] Trang mục lục: {[p+1 for p in toc_pages]} "
+        f"-> đọc RIÊNG từng trang ở {toc_dpi} dpi.")
+
+    modules = []
+    for pno in toc_pages:
+        _merge_modules(modules, _read_toc_page(doc, client, pno, toc_dpi))
+    modules = [m for m in modules if m.get("topics")]
     if not modules:
         return None
 
