@@ -161,6 +161,10 @@ def main():
                     help="ghi thêm bản .toc.txt để soát/sửa tay (build_toc.py, offset 0)")
     ap.add_argument("--overwrite", action="store_true",
                     help="ép sinh lại kể cả khi file TOC đã tồn tại (mặc định: resume)")
+    ap.add_argument("--limit", type=int, default=0, metavar="N",
+                    help="CHỈ xử lý N cuốn ĐẦU TIÊN rồi dừng (test nhanh, vd "
+                         "--limit 2). 0 = làm hết. Resume vẫn hoạt động nên chạy "
+                         "lại bỏ cờ này sẽ làm tiếp các cuốn còn lại.")
     # Các cờ chọn nguồn AI — giống main.py.
     ap.add_argument("--backend", default="gemini", choices=["gemini", "claude"],
                     help="nguồn AI khi PDF thiếu bookmark (mặc định gemini)")
@@ -214,8 +218,14 @@ def main():
     if not pdfs:
         sys.exit(f"Không tìm thấy file .pdf nào trong: {args.pdf_root}")
 
-    log(f"🔎 Tìm thấy {len(pdfs)} file PDF trong {args.pdf_root} "
-        f"-> ghi TOC vào {args.out}/ (giữ nguyên cấu trúc thư mục).")
+    total_found = len(pdfs)
+    if args.limit and args.limit > 0 and args.limit < total_found:
+        pdfs = pdfs[:args.limit]
+        log(f"🔎 Tìm thấy {total_found} file PDF — --limit {args.limit}: chỉ xử lý "
+            f"{len(pdfs)} cuốn đầu (test nhanh) -> ghi TOC vào {args.out}/.")
+    else:
+        log(f"🔎 Tìm thấy {total_found} file PDF trong {args.pdf_root} "
+            f"-> ghi TOC vào {args.out}/ (giữ nguyên cấu trúc thư mục).")
 
     # Lazy client: chỉ khởi tạo khi có PDF đầu tiên cần AI (tiết kiệm khi toàn bookmark).
     _client_box = {}

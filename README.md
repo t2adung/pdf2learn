@@ -233,9 +233,13 @@ python3 batch_toc.py pdf --out tocs --also-txt --overwrite
 - Vẫn nên dùng `--also-txt` để có bản `.toc.txt` soát nhanh; cuốn nào offset lệch
   chỉ cần sửa `.toc.txt` rồi dựng lại bằng `build_toc.py` (0 token).
 
+- `--limit N`: chỉ xử lý **N cuốn đầu tiên** rồi dừng — test nhanh chất lượng
+  TOC vài cuốn trước khi chạy cả bộ (vd `--limit 2`). Resume vẫn hoạt động: bỏ cờ
+  này chạy lại sẽ làm tiếp các cuốn còn lại.
+
 Bộ cờ dùng chung với `main.py`: `--backend {gemini,claude}`, `--model`,
-`--interval`, `--dpi`, `--force-ai-toc`, `--dry-run`; thêm `--out`, `--suffix`,
-`--also-txt`, `--overwrite`, `--smart/--no-smart`, `--front-pages`,
+`--interval`, `--dpi`, `--limit`, `--force-ai-toc`, `--dry-run`; thêm `--out`,
+`--suffix`, `--also-txt`, `--overwrite`, `--smart/--no-smart`, `--front-pages`,
 `--tail-pages`, `--toc-dpi`, `--cover-offset`, `--auto-offset`, `--max-offset`.
 
 ---
