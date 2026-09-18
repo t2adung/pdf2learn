@@ -37,6 +37,9 @@ CHẠY:
     python3 toc_from_images.py toc_images/ten-sach.pdf --offset 1 --last-page 197 \
         --json-out runs/ten-sach/work/01_toc.json
 
+    # Dùng SUBSCRIPTION Claude thay GEMINI_API_KEY (0đ phụ trội, cần `claude login`):
+    python3 toc_from_images.py toc_images/ten-sach --backend claude --out ten-sach.toc.txt
+
     # Test không cần API key:
     python3 toc_from_images.py toc_images/ten-sach --out /tmp/t.txt --dry-run
 """
@@ -183,6 +186,11 @@ def main():
                     help="(tuỳ chọn) trang PDF nơi bài cuối kết thúc")
     ap.add_argument("--json-out", type=Path, default=None,
                     help="nơi ghi 01_toc.json (cần --offset và --last-page)")
+    ap.add_argument("--backend", default="gemini", choices=["gemini", "claude"],
+                    help="nguồn AI OCR: gemini (REST API, cần GEMINI_API_KEY — mặc định) "
+                         "hoặc claude (gọi Claude Code CLI `claude -p`, dùng SUBSCRIPTION "
+                         "Max/Pro, KHÔNG cần API key, KHÔNG tính tiền theo token). "
+                         "claude cần đã cài Claude Code + `claude login`.")
     ap.add_argument("--model", default="gemini-2.5-flash")
     ap.add_argument("--interval", type=float, default=6.0)
     ap.add_argument("--dry-run", action="store_true", help="MockGemini, không cần API key")
@@ -193,11 +201,18 @@ def main():
     if args.json_out and (args.offset is None or args.last_page is None):
         sys.exit("--json-out cần cả --offset và --last-page (xem docstring build_toc.py).")
 
-    # ---- client ----
+    # ---- client (giống main.py: gemini REST / claude subscription / mock) ----
     if args.dry_run:
         from gemini import MockGemini
         client = MockGemini()
         log("🧪 DRY-RUN: dùng MockGemini.")
+    elif args.backend == "claude":
+        from claude_cli import CLAUDE_DEFAULT_MODEL, ClaudeCLI
+        # --model mặc định là của Gemini -> chuyển sang model Claude mặc định.
+        model = CLAUDE_DEFAULT_MODEL if args.model.startswith("gemini") else args.model
+        client = ClaudeCLI(model=model, interval=args.interval)
+        log(f"🟣 Backend CLAUDE (subscription qua `claude -p`, model={model}). "
+            "Không cần API key.")
     else:
         try:
             from dotenv import load_dotenv
@@ -206,7 +221,8 @@ def main():
             pass
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         if not api_key:
-            sys.exit("Thiếu GEMINI_API_KEY (hoặc chạy --dry-run để test).")
+            sys.exit("Thiếu GEMINI_API_KEY (hoặc chạy --dry-run để test, "
+                     "hoặc --backend claude để dùng subscription Claude).")
         from gemini import Gemini
         client = Gemini(api_key, model=args.model, interval=args.interval)
 
