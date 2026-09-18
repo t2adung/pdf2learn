@@ -19,6 +19,20 @@
   Claude đọc bằng Read, `--model` Gemini tự đổi sang `sonnet`. Chức năng y hệt nhánh
   Gemini (OCR → `toc.txt` → `01_toc.json`).
 
+## Số câu hỏi theo SỐ TRANG (mới nhất)
+
+- **Số câu hỏi mỗi topic giờ tỉ lệ với SỐ TRANG tài liệu** thay vì gần như cố
+  định (~10 câu). Chỉ tiêu tính trong `stage_questions.py`
+  (`_target_question_count`): trung bình `QUESTIONS_PER_PAGE` = **4 câu/trang**;
+  trang/phần **trọng yếu** (kiến thức quan trọng) ra **6-8 câu**. Trần cho ~1/3
+  số trang là trọng yếu (`KEY_PAGE_FRACTION`), tối đa `KEY_PAGE_MAX` = 8 câu/trang.
+  - Ví dụ: 1 trang → 4-8 câu; 3 trang → 12-16 câu; 5 trang → 20-28 câu.
+  - Prompt sinh câu hỏi nhận thêm `n_pages` + khoảng `target_min-target_max`;
+    ràng buộc **coverage key_points** vẫn giữ (mỗi key point ≥ 1 câu), phần câu
+    dôi ra dùng để đào SÂU các ý trọng yếu thay vì lặp lại.
+  - Tinh chỉnh nhanh qua các hằng số đầu file `stage_questions.py`
+    (`QUESTIONS_PER_PAGE`, `KEY_PAGE_MIN`, `KEY_PAGE_MAX`, `KEY_PAGE_FRACTION`).
+
 ## Cập nhật schema bài học (mới nhất)
 
 - **Thêm mục cuối `✅ Trả lời câu hỏi khởi động`** (field `hook_answer`): chốt
