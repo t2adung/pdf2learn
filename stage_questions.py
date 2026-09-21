@@ -21,23 +21,28 @@ QUESTIONS_PER_PAGE = 4      # trung bình mỗi trang thường
 KEY_PAGE_MIN = 6            # sàn cho MỘT trang trọng yếu (6-8 câu)
 KEY_PAGE_MAX = 8            # trần cho MỘT trang trọng yếu (6-8 câu)
 KEY_PAGE_FRACTION = 1 / 3   # ước lượng tỉ lệ trang trọng yếu trong topic
+MAX_QUESTIONS_PER_TOPIC = 20  # TRẦN CỨNG: mỗi topic không quá 20 câu
 
 
 def _target_question_count(n_pages: int) -> tuple:
-    """Trả (target_min, target_max) số câu cho topic dựa trên SỐ TRANG.
+    """Trả (target_min, target_max) số câu cho topic dựa trên SỐ TRANG,
+    KẸP trong trần cứng MAX_QUESTIONS_PER_TOPIC.
 
     - target_min = QUESTIONS_PER_PAGE * số_trang  (trung bình 4 câu/trang).
     - target_max: cộng thêm phần dôi cho các trang trọng yếu — ước lượng
       ~KEY_PAGE_FRACTION số trang là trọng yếu, mỗi trang trọng yếu thêm tối đa
       (KEY_PAGE_MAX - QUESTIONS_PER_PAGE) câu so với trang thường.
+    - Cả hai đều kẹp <= MAX_QUESTIONS_PER_TOPIC (đảm bảo target_min <= target_max).
 
-    Ví dụ (mặc định 4/trang, trọng yếu tối đa 8):
-      1 trang  -> (4, 8)      3 trang  -> (12, 16)     5 trang  -> (20, 28)
+    Ví dụ (mặc định 4/trang, trọng yếu tối đa 8, trần 20):
+      1 trang -> (4, 8)   3 trang -> (12, 16)   5 trang -> (20, 20)
+      8 trang -> (20, 20) (đã chạm trần)
     """
     n_pages = max(1, int(n_pages))
     key_pages = max(1, math.ceil(n_pages * KEY_PAGE_FRACTION))
-    target_min = QUESTIONS_PER_PAGE * n_pages
-    target_max = target_min + (KEY_PAGE_MAX - QUESTIONS_PER_PAGE) * key_pages
+    target_max = QUESTIONS_PER_PAGE * n_pages + (KEY_PAGE_MAX - QUESTIONS_PER_PAGE) * key_pages
+    target_max = min(target_max, MAX_QUESTIONS_PER_TOPIC)
+    target_min = min(QUESTIONS_PER_PAGE * n_pages, target_max)
     return target_min, target_max
 
 QUESTIONS_SCHEMA = {
@@ -144,6 +149,13 @@ def generate_questions_one(row: dict, content_entry: dict, client,
     questions = res.get("questions", [])
     for q in questions:
         q["difficulty"] = min(3, max(1, int(q.get("difficulty", 1))))
+    # Trần cứng: cắt bớt nếu AI lỡ sinh quá MAX. Giữ NGUYÊN thứ tự AI sinh (bám
+    # key_points -> ưu tiên coverage) thay vì sắp theo độ khó (tránh chỉ còn câu dễ).
+    # Cắt TRƯỚC validation để không tốn token giải các câu thừa sẽ bị bỏ.
+    if len(questions) > MAX_QUESTIONS_PER_TOPIC:
+        warn(f"{slug}: AI sinh {len(questions)} câu > trần {MAX_QUESTIONS_PER_TOPIC} "
+             f"-> cắt còn {MAX_QUESTIONS_PER_TOPIC}.")
+        questions = questions[:MAX_QUESTIONS_PER_TOPIC]
 
     dropped = None
     if validate and questions:
