@@ -1,5 +1,20 @@
 # pdf2learn v2 — Content chuyển từ Markdown blob sang Learning Object JSON
 
+## Câu hỏi tự luận (essay) — `import-payload.json`
+
+- **Stage 5b mới (`stage_essay.py`), mặc định BẬT**: mỗi bài sinh 4–6 câu tự luận.
+  AI đọc lại đúng các trang của bài (sub-PDF, tôn trọng `--dpi`) + nội dung đã soạn;
+  ưu tiên câu hỏi trong **box/khung in màu** và câu hỏi có sẵn trong sách, thiếu thì
+  tự soạn; ưu tiên dạng định nghĩa / liệt kê / giải thích. Cache `work/05_essay.json`.
+- **Output `import-payload.json`** (snapshot + batch): `{teacher_id, topics[], exercises[]}`
+  với `exercises[].type = "essay"`, đúng thứ tự key của file mẫu. `content` của topic
+  giống cột `content` trong `topics.csv`. `manifest.json` thêm `stats.essays`, `n_essays`.
+- Cờ mới: `--no-essay` (tắt bước), `--essay-only` (khoá đã gen: chỉ sinh câu tự luận
+  cho topic đã có content + MCQ, không đụng phần khác, không tạo batch mới),
+  `--redo-essay` (sinh lại riêng câu tự luận), `--teacher-id`.
+  `--redo-from N` với N ≤ 5 cũng xoá cache tự luận.
+- Test: `test_essay.py` (0 token).
+
 ## Backend Claude subscription (`--backend claude`)
 
 - **Thêm nguồn AI dùng SUBSCRIPTION Claude Max/Pro** qua Claude Code CLI (`claude -p`)

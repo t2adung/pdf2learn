@@ -279,6 +279,25 @@ class MockGemini(Gemini):
                            "explanation_vi": f"Giải thích vì sao đáp án đúng cho {kp}.",
                            "difficulty": (i % 3) + 1})
             return {"questions": qs}
+        if tag == "essay":
+            return {"questions": [
+                {"question": "Khái niệm X là gì? (mock)",
+                 "correct_answer": "X là ... (định nghĩa theo sách, mock).",
+                 "explanation_vi": "Cần nêu đúng ý chính của định nghĩa X.",
+                 "difficulty": 1},
+                {"question": "Kể tên 2 đặc điểm của X. (mock)",
+                 "correct_answer": "Đặc điểm 1; Đặc điểm 2.",
+                 "explanation_vi": "Nêu đúng 2 đặc điểm bất kỳ trong bài.",
+                 "difficulty": 1},
+                {"question": "Vì sao X quan trọng trong đời sống? (mock)",
+                 "correct_answer": "Vì X có mặt khắp nơi và ... (mock).",
+                 "explanation_vi": "Ý chính: vai trò của X trong đời sống.",
+                 "difficulty": 2},
+                {"question": "Phân biệt Y và Z. (mock)",
+                 "correct_answer": "Y ...; còn Z ... (mock).",
+                 "explanation_vi": "Nêu được điểm khác nhau cốt lõi giữa Y và Z.",
+                 "difficulty": 3},
+            ]}
         if tag == "review":
             return {"overall_score": 8,
                     "content_issues": [{"severity": "low",
