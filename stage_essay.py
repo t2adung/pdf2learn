@@ -6,7 +6,7 @@ Khác MCQ (stage 5 — sinh từ key_points), câu tự luận ưu tiên LẤY T
   BOX IN MÀU (Câu hỏi, Luyện tập, Vận dụng, Em có biết, Hoạt động...) và các
   câu hỏi có sẵn trong bài — đây là nguồn câu hỏi chuẩn nhất của giáo viên.
 - Kèm nội dung bài học đã soạn (content markdown) làm ngữ cảnh soạn đáp án.
-- Mỗi bài 4-6 câu, ưu tiên dạng ĐỊNH NGHĨA / LIỆT KÊ / GIẢI THÍCH — dạng
+- Mỗi bài 10-12 câu, ưu tiên dạng ĐỊNH NGHĨA / LIỆT KÊ / GIẢI THÍCH — dạng
   chấm được bằng đáp án mẫu.
 
 Output khớp phần "exercises" của import payload (xem stage_export.py):
@@ -16,7 +16,7 @@ from render_markdown import content_markdown
 from stage_content import cut_pages
 from utils import log, warn
 
-ESSAY_MIN, ESSAY_MAX = 4, 6
+ESSAY_MIN, ESSAY_MAX = 10, 12
 
 ESSAY_SCHEMA = {
     "type": "object",
@@ -42,6 +42,7 @@ NỘI DUNG BÀI HỌC ĐÃ TÓM TẮT (tham khảo để soạn đáp án):
 {content}
 
 Nhiệm vụ: soạn {n_min}-{n_max} câu hỏi tự luận NGẮN cho bài này.
+Bài quá ngắn không đủ ý thì được ít hơn — KHÔNG lặp ý hay hỏi vụn vặt cho đủ số.
 
 NGUỒN CÂU HỎI — ưu tiên theo thứ tự:
 1. Câu hỏi CÓ SẴN TRONG SÁCH: thường nằm trong các BOX/KHUNG IN MÀU (nền màu,

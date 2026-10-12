@@ -9,7 +9,7 @@ Pipeline AI biến một PDF giáo trình (kể cả PDF **scan**) thành gói h
   🌍 Liên hệ thực tế → 🖼️ Hình minh hoạ → ✅ Trả lời câu hỏi khởi động,
 - đính **nguyên trang sách** vào đúng mục nội dung (0 token),
 - sinh **câu hỏi trắc nghiệm** phủ hết kiến thức, có pass tự giải kiểm chứng đáp án,
-- sinh **câu hỏi tự luận** 4–6 câu/bài (mặc định bật), ưu tiên câu hỏi có sẵn trong
+- sinh **câu hỏi tự luận** 10–12 câu/bài (mặc định bật), ưu tiên câu hỏi có sẵn trong
   box in màu của sách, dạng định nghĩa / liệt kê / giải thích → `import-payload.json`,
 - **cross-model review** (tuỳ chọn) + **quality checks** thuần code + **báo cáo token**,
 - export đúng template: `topics.csv`, `multichoice.csv`, `images/`, `manifest.json`
@@ -420,7 +420,7 @@ cửa sổ hạn mức reset, chạy lại **đúng lệnh cũ** — topic đã 
 
 | Flag | Mặc định | Ý nghĩa |
 |---|---|---|
-| *(mặc định)* | bật | sau MCQ, mỗi bài sinh **4–6 câu tự luận**: AI đọc lại đúng các trang của bài, ưu tiên câu hỏi trong **box/khung in màu** & câu hỏi có sẵn trong sách (Câu hỏi, Luyện tập, Vận dụng…), thiếu thì tự soạn; ưu tiên dạng **định nghĩa / liệt kê / giải thích**. Kết quả ghi `output/import-payload.json` |
+| *(mặc định)* | bật | sau MCQ, mỗi bài sinh **10–12 câu tự luận**: AI đọc lại đúng các trang của bài, ưu tiên câu hỏi trong **box/khung in màu** & câu hỏi có sẵn trong sách (Câu hỏi, Luyện tập, Vận dụng…), thiếu thì tự soạn; ưu tiên dạng **định nghĩa / liệt kê / giải thích**. Kết quả ghi `output/import-payload.json` |
 | `--essay-only` | tắt | cho **khoá đã gen**: CHỈ sinh câu tự luận cho các topic đã có content + MCQ trong cache, **không** sinh/sửa content, ảnh, MCQ, review; rồi export lại snapshot (kèm `import-payload.json`). Không tạo batch mới |
 | `--teacher-id ID` | `00000000-…-000000000000` | giá trị `teacher_id` trong `import-payload.json` |
 
@@ -498,7 +498,7 @@ Kết quả trung gian mỗi stage lưu ở `runs/<tên-pdf>/work/`:
 3. Content    Learning Object JSON (objectives/sections/mindmap/…)        → work/03_content.json
 4. Images     đính nguyên trang sách + vẽ mindmap SVG (0 token)           → work/04_images.json + output/images/
 5. Questions  MCQ bám key_points (coverage) + pass tự giải kiểm chứng     → work/05_questions.json
-5b. Essay     4-6 câu tự luận/bài, ưu tiên box màu/câu hỏi trong sách     → work/05_essay.json
+5b. Essay     10-12 câu tự luận/bài, ưu tiên box màu/câu hỏi trong sách     → work/05_essay.json
 6. Review     (--review) model thứ 2 thẩm định content + câu hỏi          → work/06_review.json
 ─ hết vòng lặp ─
 7. Export     batch delta + snapshot full + quality checks                → output/

@@ -2,7 +2,7 @@
 
 ## Câu hỏi tự luận (essay) — `import-payload.json`
 
-- **Stage 5b mới (`stage_essay.py`), mặc định BẬT**: mỗi bài sinh 4–6 câu tự luận.
+- **Stage 5b mới (`stage_essay.py`), mặc định BẬT**: mỗi bài sinh 10–12 câu tự luận.
   AI đọc lại đúng các trang của bài (sub-PDF, tôn trọng `--dpi`) + nội dung đã soạn;
   ưu tiên câu hỏi trong **box/khung in màu** và câu hỏi có sẵn trong sách, thiếu thì
   tự soạn; ưu tiên dạng định nghĩa / liệt kê / giải thích. Cache `work/05_essay.json`.

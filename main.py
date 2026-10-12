@@ -8,7 +8,7 @@ Pipeline 6 stage, kết quả trung gian lưu ở runs/<tên-pdf>/work/:
   3. Content    : mỗi topic -> Markdown bài học + key_points (AI, chunk theo trang)
   4. Images     : trích ảnh PDF + AI lọc; fallback sinh SVG diagram
   5. Questions  : MCQ theo key_points (coverage) + pass validation đáp án
-     Essay      : 4-6 câu tự luận/bài, ưu tiên câu hỏi trong box màu của sách
+     Essay      : 10-12 câu tự luận/bài, ưu tiên câu hỏi trong box màu của sách
                   (mặc định BẬT; tắt bằng --no-essay)
   6. Export     : CSV UTF-8 BOM đúng template + manifest.json
 
@@ -97,7 +97,7 @@ def main():
                     help="nhúng THÊM ảnh trích từ trang PDF (AI lọc, +1 request/topic). "
                          "Mặc định TẮT: chỉ giữ mindmap SVG do code vẽ (0 token, gọn giao diện).")
     ap.add_argument("--no-essay", action="store_true",
-                    help="bỏ bước sinh câu hỏi tự luận (mặc định BẬT: 4-6 câu/bài, "
+                    help="bỏ bước sinh câu hỏi tự luận (mặc định BẬT: 10-12 câu/bài, "
                          "+1 request/topic, ghi output/import-payload.json)")
     ap.add_argument("--essay-only", action="store_true",
                     help="cho khoá ĐÃ GEN: CHỈ sinh câu hỏi tự luận cho các topic đã "

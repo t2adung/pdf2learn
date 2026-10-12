@@ -21,7 +21,7 @@ LO = {"objectives": ["Nêu được cấu trúc thì hiện tại hoàn thành."
 
 
 class FakeClient:
-    """Trả về 8 câu (vượt ESSAY_MAX) + 1 câu rỗng + difficulty lệch để test làm sạch."""
+    """Trả về 16 câu (vượt ESSAY_MAX) + 1 câu rỗng + difficulty lệch để test làm sạch."""
     def __init__(self):
         self.parts = None
 
@@ -34,7 +34,7 @@ class FakeClient:
         qs = [{"question": "", "correct_answer": "x", "explanation_vi": "", "difficulty": 1}]
         qs += [{"question": f"Câu {i}?", "correct_answer": f"Đáp án {i}",
                 "explanation_vi": "giải thích", "difficulty": d}
-               for i, d in enumerate([0, 5, "2", 1, 2, 3, 1, 2])]
+               for i, d in enumerate([0, 5, "2"] + [1, 2, 3] * 4 + [1])]
         return {"questions": qs}
 
 

@@ -280,7 +280,9 @@ class MockGemini(Gemini):
                            "difficulty": (i % 3) + 1})
             return {"questions": qs}
         if tag == "essay":
-            return {"questions": [
+            # 4 dạng mẫu x 3 = 12 câu (trong khoảng ESSAY_MIN-ESSAY_MAX)
+            return {"questions": [dict(q, question=f"{q['question']} [{i}]")
+                                  for i in range(1, 4) for q in [
                 {"question": "Khái niệm X là gì? (mock)",
                  "correct_answer": "X là ... (định nghĩa theo sách, mock).",
                  "explanation_vi": "Cần nêu đúng ý chính của định nghĩa X.",
@@ -297,7 +299,7 @@ class MockGemini(Gemini):
                  "correct_answer": "Y ...; còn Z ... (mock).",
                  "explanation_vi": "Nêu được điểm khác nhau cốt lõi giữa Y và Z.",
                  "difficulty": 3},
-            ]}
+            ]]}
         if tag == "review":
             return {"overall_score": 8,
                     "content_issues": [{"severity": "low",
