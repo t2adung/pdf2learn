@@ -1,5 +1,21 @@
 # pdf2learn v2 — Content chuyển từ Markdown blob sang Learning Object JSON
 
+## Kho vector RAG — pgvector + gte-small (`--rag`)
+
+- **Stage 8 mới (`stage_rag.py`), mặc định TẮT**: chunk nội dung bài giảng (Learning
+  Object đã soạn + text layer PDF gốc theo trang) → embed bằng `thenlper/gte-small`
+  (sentence-transformers, 384 chiều, chạy cục bộ, **0 token AI**) → ghi PostgreSQL +
+  pgvector, bảng `rag_chunks`, index HNSW cosine, hàm `match_rag_chunks` (`sql/rag_schema.sql`,
+  tự chạy idempotent, tự `create extension vector`).
+- Chunk đo bằng tokenizer của model (mặc định 300 token, overlap 40, không vượt 512),
+  gắn header ngữ cảnh `Bài › Mục`; ghi `output/rag/chunks.jsonl` để soát.
+- Idempotent theo topic (`topic_hash`): không đổi → bỏ qua; đổi → thay trong 1 transaction.
+  Lỗi RAG không làm hỏng export. Thiếu `DATABASE_URL` → báo lỗi TRƯỚC khi gọi AI.
+- Cờ mới: `--rag`, `--rag-only` (khoá đã gen, không cần API key), `--rag-dsn`,
+  `--rag-model`, `--rag-sources`, `--rag-chunk-tokens`, `--rag-overlap`.
+- `rag_search.py`: truy vấn thử top-k. Phụ thuộc tuỳ chọn: `requirements-rag.txt`.
+- Test: `test_rag.py` (0 token; phần DB chạy khi đặt `RAG_TEST_DSN`).
+
 ## Câu hỏi tự luận (essay) — `import-payload.json`
 
 - **Stage 5b mới (`stage_essay.py`), mặc định BẬT**: mỗi bài sinh 10–12 câu tự luận.
