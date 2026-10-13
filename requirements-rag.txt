@@ -1,0 +1,8 @@
+# Phụ thuộc TUỲ CHỌN cho bước RAG (--rag / --rag-only / rag_search.py).
+# Tách riêng vì sentence-transformers kéo theo torch (nặng) — pipeline chính không cần.
+# Máy không có GPU: cài torch bản CPU trước cho nhẹ:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+-r requirements.txt
+sentence-transformers>=2.7
+psycopg[binary]>=3.1
+pgvector>=0.2.5

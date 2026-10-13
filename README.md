@@ -11,6 +11,8 @@ Pipeline AI biến một PDF giáo trình (kể cả PDF **scan**) thành gói h
 - sinh **câu hỏi trắc nghiệm** phủ hết kiến thức, có pass tự giải kiểm chứng đáp án,
 - sinh **câu hỏi tự luận** 10–12 câu/bài (mặc định bật), ưu tiên câu hỏi có sẵn trong
   box in màu của sách, dạng định nghĩa / liệt kê / giải thích → `import-payload.json`,
+- **kho vector RAG** (tuỳ chọn `--rag`): chunk + embed bài giảng bằng `gte-small`
+  vào PostgreSQL + **pgvector** cho chatbot/trợ giảng tra cứu,
 - **cross-model review** (tuỳ chọn) + **quality checks** thuần code + **báo cáo token**,
 - export đúng template: `topics.csv`, `multichoice.csv`, `images/`, `manifest.json`
   (tuỳ chọn `output/json/` — bộ Learning Object JSON hoàn chỉnh từng bài).
@@ -452,6 +454,111 @@ python3 main.py sach.pdf --level "Lớp 6" --essay-only --redo-essay
 }
 ```
 
+### Kho vector cho RAG (pgvector + gte-small)
+
+Option **`--rag`** đẩy nội dung bài giảng vào **PostgreSQL + pgvector** để chatbot /
+trợ giảng tra cứu (Retrieval-Augmented Generation). Chạy **sau export**, **0 token AI**
+(model embedding chạy cục bộ trên CPU), resume & idempotent theo topic.
+
+| Flag | Mặc định | Ý nghĩa |
+|---|---|---|
+| `--rag` | tắt | sau export: chunk + embed các topic hoàn chỉnh → bảng `rag_chunks` |
+| `--rag-only` | tắt | cho **khoá đã gen**: CHỈ chunk + embed content trong cache (không gọi AI, không cần `GEMINI_API_KEY`, không export lại) |
+| `--rag-dsn DSN` | `$DATABASE_URL` | chuỗi kết nối Postgres có pgvector. **Bỏ trống = chỉ xuất `rag_chunks.csv`** để tự import |
+| `--rag-model M` | `thenlper/gte-small` | model sentence-transformers (gte-small: 384 chiều, tối đa 512 token). Nhận cả đường dẫn thư mục model đã tải sẵn |
+| `--rag-sources` | `lesson,book` | `lesson` = bài học đã soạn (stage 3); `book` = text layer PDF gốc theo trang (PDF scan không có text → tự bỏ qua) |
+| `--rag-chunk-tokens N` | `300` | trần token/chunk (đo bằng tokenizer của model, gồm header) — tự hạ nếu vượt giới hạn model |
+| `--rag-overlap N` | `40` | token chồng lấn giữa 2 chunk liền kề |
+
+**Cài đặt (1 lần):**
+
+```bash
+pip install -r requirements-rag.txt     # sentence-transformers (kéo torch), psycopg, pgvector
+# Máy không GPU — cài torch bản CPU trước cho nhẹ:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+# Postgres có pgvector — chọn 1:
+#  a) Supabase: Database → Extensions → bật "vector"; lấy connection string
+#  b) Docker local:
+docker run -d --name pg -e POSTGRES_PASSWORD=pw -p 5432:5432 pgvector/pgvector:pg16
+export DATABASE_URL=postgresql://postgres:pw@localhost:5432/postgres
+```
+
+Tool tự `CREATE EXTENSION IF NOT EXISTS vector`, tạo bảng `rag_chunks`, index **HNSW
+cosine** và hàm `match_rag_chunks(...)` (xem `sql/rag_schema.sql`) — không cần chạy SQL tay.
+
+**Chạy:**
+
+```bash
+python3 main.py sach.pdf --level "Lớp 6" --rag      # khoá mới: gen + export + RAG
+python3 main.py sach.pdf --rag-only                 # khoá đã gen: chỉ RAG, 0 token AI
+python3 main.py sach.pdf --dry-run --rag            # test: embedder giả (vector ngẫu nhiên), vẫn xuất CSV
+
+# Nghiệm thu bước retrieve:
+python3 rag_search.py "Tế bào gồm những thành phần nào?" --book sach --k 5
+python3 rag_search.py "quang hợp" --book sach --json   # JSON để ghép vào prompt LLM
+```
+
+**Cách chunk (thuần code, deterministic):**
+
+- **lesson**: Learning Object tách theo nhóm ngữ nghĩa — *Tổng quan* (mục tiêu, câu
+  hỏi khởi động + trả lời, liên hệ thực tế) · *Từ khoá* · *từng mục Nội dung chính* ·
+  *Ý chính* (`key_points` — câu kiến thức độc lập, rất hợp để tra cứu).
+- **book**: text layer PDF từng trang (giữ đúng số trang để trích dẫn nguồn).
+- Mỗi nhóm cắt theo ranh giới câu, gom tới `--rag-chunk-tokens`, chồng lấn
+  `--rag-overlap`. Khi embed, mỗi chunk được gắn header ngữ cảnh
+  `Bài: <tên bài> › Mục: <mục>` để chunk ngắn vẫn đủ nghĩa.
+- Vector cache ở `work/08_rag_vectors.json`: chạy lại, topic không đổi **không embed lại**.
+
+**Xuất file để tự import vào DB (giống `topics.csv`)** — luôn có, kể cả khi không đặt
+`DATABASE_URL`:
+
+| File | Nội dung |
+|---|---|
+| `output/rag_chunks.csv` | 1 dòng / chunk. Cột **trùng tên cột bảng `rag_chunks`**: `book, module_slug, module_title, topic_slug, topic_title, level, source, section, page_start, page_end, chunk_index, content, token_count, topic_hash, embedding_model, embedding`. Cột `embedding` là literal pgvector `[0.0123,-0.045,...]` (384 số) |
+| `output/rag_schema.sql` | schema đã điền sẵn số chiều — bật pgvector, tạo bảng, index HNSW, hàm `match_rag_chunks` |
+
+> Khác `topics.csv` (UTF-8 **có BOM** cho Excel), `rag_chunks.csv` là UTF-8 **không
+> BOM** — BOM sẽ dính vào tên cột đầu (`book`) và làm hỏng lệnh import.
+
+Import bằng `psql` (Postgres tự host hoặc Supabase — dùng connection string của project):
+
+```bash
+cd runs/sach/output
+psql "$DATABASE_URL" -f rag_schema.sql          # lần đầu (idempotent, chạy lại không sao)
+# Import lại sách đã có -> xoá bản cũ trước (bảng có khoá unique theo chunk):
+psql "$DATABASE_URL" -c "delete from rag_chunks where book = 'sach'"
+psql "$DATABASE_URL" -c "\copy rag_chunks(book,module_slug,module_title,topic_slug,topic_title,level,source,section,page_start,page_end,chunk_index,content,token_count,topic_hash,embedding_model,embedding) from 'rag_chunks.csv' with (format csv, header true)"
+```
+
+Supabase không dùng psql: mở SQL Editor, dán nội dung `rag_schema.sql` → Run, rồi
+Table Editor → `rag_chunks` → Insert → *Import data from CSV*. Với sách lớn (file CSV
+nhiều MB vì có vector) nên dùng `\copy` ở trên cho chắc.
+
+
+**Idempotent:** mỗi topic có `topic_hash` (hash toàn bộ chunk + tên model). Chạy lại
+→ topic không đổi được bỏ qua (không embed lại); content đổi (vd sau `--redo-content`)
+→ xoá & ghi lại chunk của topic đó trong 1 transaction. Lỗi RAG **không** làm hỏng
+phần export — sửa xong chạy `--rag-only`.
+
+**Dùng trong app (Supabase RPC / SQL):** embed câu hỏi người học bằng **cùng model**
+rồi gọi:
+
+```sql
+select * from match_rag_chunks('<vector 384 chiều>'::vector, 5, 'sach', null, 'thenlper/gte-small');
+-- tham số: query_embedding, match_count, filter_book, filter_topic, filter_model
+```
+
+> ⚠️ **Về chất lượng tiếng Việt của gte-small:** `thenlper/gte-small` được huấn
+> luyện chủ yếu trên **tiếng Anh**, tokenizer là BERT *uncased* (bỏ dấu khi
+> tokenize → "bàn/bán/bạn" dễ trùng nhau). Với sách tiếng Anh thì rất tốt; với sách
+> **tiếng Việt** nên nghiệm thu bằng `rag_search.py` trên vài câu hỏi thật trước khi
+> dùng. Nếu kết quả kém, đổi sang model đa ngữ **cùng 384 chiều** (dùng chung bảng,
+> tool tự thêm tiền tố `query:`/`passage:`):
+> `--rag-model intfloat/multilingual-e5-small`. Đổi model ⇒ chạy lại `--rag-only`
+> (dữ liệu tách theo cột `embedding_model`, nhớ lọc `filter_model` khi truy vấn).
+> Model khác số chiều (vd 768) cần database/schema riêng — tool sẽ báo lỗi rõ ràng.
+
 ### Thẩm định chéo (cross-model review)
 
 | Flag | Mặc định | Ý nghĩa |
@@ -462,7 +569,8 @@ python3 main.py sach.pdf --level "Lớp 6" --essay-only --redo-essay
 
 **Biến môi trường:** `GEMINI_API_KEY` (backend gemini, bắt buộc trừ `--dry-run`;
 **không** cần cho backend claude); `GROQ_API_KEY` / `OPENROUTER_API_KEY` (chỉ khi
-dùng reviewer tương ứng). Có thể đặt trong file `.env` (chép từ `env.example`).
+dùng reviewer tương ứng); `DATABASE_URL` (tuỳ chọn cho `--rag`/`--rag-only` — có thì ghi thẳng vào DB; bắt buộc cho `rag_search.py`).
+Có thể đặt trong file `.env` (chép từ `env.example`).
 
 ---
 
@@ -477,6 +585,8 @@ output/
 ├── manifest.json     # bản đồ topic → ảnh → caption → nguồn + warnings + quality checks
 ├── json/             # (nếu --export-json) 1 file Learning Object / topic theo format đích
 ├── review_report.md  # (nếu --review) báo cáo thẩm định — ĐỌC TRƯỚC KHI IMPORT
+├── rag_chunks.csv    # (nếu --rag/--rag-only) chunk + vector, import thẳng vào bảng rag_chunks
+├── rag_schema.sql    #   schema pgvector để chạy trước khi import CSV
 ├── batch-01/         # DELTA: chỉ các topic hoàn chỉnh trong lần chạy 1 (topics/mc/images/manifest)
 ├── batch-02/         # chỉ topic MỚI của lần chạy tiếp (sau khi hết quota, resume...)
 └── ...
@@ -502,6 +612,7 @@ Kết quả trung gian mỗi stage lưu ở `runs/<tên-pdf>/work/`:
 6. Review     (--review) model thứ 2 thẩm định content + câu hỏi          → work/06_review.json
 ─ hết vòng lặp ─
 7. Export     batch delta + snapshot full + quality checks                → output/
+8. RAG        (--rag) chunk + embed gte-small (0 token AI)                → Postgres rag_chunks
 ```
 
 Content là **Learning Object có cấu trúc** (không phải blob markdown): AI chỉ trả

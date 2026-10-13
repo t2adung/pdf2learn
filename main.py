@@ -11,6 +11,8 @@ Pipeline 6 stage, kết quả trung gian lưu ở runs/<tên-pdf>/work/:
      Essay      : 10-12 câu tự luận/bài, ưu tiên câu hỏi trong box màu của sách
                   (mặc định BẬT; tắt bằng --no-essay)
   6. Export     : CSV UTF-8 BOM đúng template + manifest.json
+  8. RAG (tuỳ chọn --rag): chunk + embed (gte-small) nội dung bài giảng vào
+                  PostgreSQL + pgvector (bảng rag_chunks) — 0 token AI
 
 Resume: mặc định LUÔN resume — stage/topic đã xong sẽ bỏ qua (an toàn khi
 đứt giữa chừng vì rate limit). Muốn sinh lại từ stage N: --redo-from N.
@@ -23,6 +25,8 @@ Dùng:
   python main.py sach.pdf --redo-from 5      # xoá cache stage 5+, sinh lại câu hỏi
   python main.py sach.pdf --no-images --no-validate   # nhanh, ít request
   python main.py sach.pdf --essay-only       # khoá đã gen: CHỈ sinh thêm câu tự luận
+  python main.py sach.pdf --rag              # + đẩy bài giảng vào kho vector (cần DATABASE_URL)
+  python main.py sach.pdf --rag-only         # khoá đã gen: CHỈ chunk + embed, 0 token AI
 """
 import argparse
 import os
@@ -118,12 +122,43 @@ def main():
                          "gemini-pro=đọc được PDF gốc)")
     ap.add_argument("--review-fix", action="store_true",
                     help="tự loại câu hỏi bị review đánh severity=high (mặc định chỉ báo cáo)")
+    ap.add_argument("--rag", action="store_true",
+                    help="sau export: chunk + embed nội dung bài giảng (model "
+                         "gte-small, chạy cục bộ, 0 token AI) -> output/rag_chunks.csv "
+                         "(import thẳng vào bảng pgvector) + ghi thẳng vào PostgreSQL "
+                         "nếu có DATABASE_URL/--rag-dsn. Cần pip install -r "
+                         "requirements-rag.txt")
+    ap.add_argument("--rag-only", action="store_true",
+                    help="cho khoá ĐÃ GEN: CHỈ chạy bước RAG trên content trong cache "
+                         "(không gọi AI, không export lại)")
+    ap.add_argument("--rag-dsn", default=None,
+                    help="Postgres DSN cho kho vector (mặc định: biến môi trường "
+                         "DATABASE_URL). Bỏ trống = chỉ xuất CSV. "
+                         "vd postgresql://user:pass@host:5432/db")
+    ap.add_argument("--rag-model", default="thenlper/gte-small",
+                    help="model embedding sentence-transformers (mặc định "
+                         "thenlper/gte-small, 384 chiều)")
+    ap.add_argument("--rag-sources", default="lesson,book",
+                    help="nguồn chunk, phân tách bằng dấu phẩy: lesson (bài học "
+                         "đã soạn) và/hoặc book (text layer PDF gốc theo trang; "
+                         "PDF scan tự bỏ qua)")
+    ap.add_argument("--rag-chunk-tokens", type=int, default=300,
+                    help="kích thước tối đa mỗi chunk (token của model, gồm header)")
+    ap.add_argument("--rag-overlap", type=int, default=40,
+                    help="số token chồng lấn giữa 2 chunk liền kề")
     ap.add_argument("--dry-run", action="store_true",
                     help="dùng MockGemini, không cần API key (test pipeline/format)")
     args = ap.parse_args()
     if args.essay_only and args.no_essay:
         sys.exit("--essay-only và --no-essay mâu thuẫn nhau — chỉ dùng 1 trong 2.")
     essay_on = not args.no_essay
+    if args.rag_only and (args.essay_only or args.redo_from <= 7 or args.redo_content
+                          or args.redo_essay):
+        sys.exit("--rag-only chỉ đọc cache đã gen — không dùng chung với "
+                 "--essay-only / --redo-from / --redo-content / --redo-essay.")
+    rag_sources = tuple(x.strip() for x in args.rag_sources.split(",") if x.strip())
+    if not rag_sources or set(rag_sources) - {"lesson", "book"}:
+        sys.exit("--rag-sources chỉ nhận lesson, book (vd: lesson,book)")
 
     # Đọc biến môi trường từ file .env nếu có (tiện chạy local, không phải export mỗi lần).
     # Không bắt buộc cài python-dotenv: nếu thiếu thì bỏ qua, vẫn dùng export/Secrets như cũ.
@@ -136,8 +171,14 @@ def main():
     if not args.pdf.exists():
         sys.exit(f"Không tìm thấy file: {args.pdf}")
 
+    # Không có DSN vẫn chạy được: chỉ xuất output/rag_chunks.csv (+ rag_schema.sql)
+    # để tự import vào DB; có DSN thì ghi thẳng vào pgvector.
+    rag_dsn = (args.rag_dsn or os.environ.get("DATABASE_URL", "")).strip()
+
     # ---- client ----
-    if args.dry_run:
+    if args.rag_only:
+        client = None                    # --rag-only: 0 token, không cần AI
+    elif args.dry_run:
         from gemini import MockGemini
         client = MockGemini()
         log("🧪 DRY-RUN: dùng MockGemini (không gọi API thật).")
@@ -181,6 +222,10 @@ def main():
             sys.exit(f"--essay-only cần khoá đã gen trong {work} nhưng thiếu: "
                      f"{', '.join(missing)}. Chạy pipeline đầy đủ trước "
                      "(mặc định đã gồm bước sinh câu tự luận).")
+
+    if args.rag_only and not caches[2].exists() and not args.toc_file:
+        sys.exit(f"--rag-only cần khoá đã gen trong {work} (thiếu {caches[2].name}). "
+                 "Chạy pipeline đầy đủ trước.")
 
     # ---- --redo-from: xoá cache từ stage N trở đi ----
     for n, f in caches.items():
@@ -279,6 +324,16 @@ def main():
         log(f"── --limit {args.limit}: chỉ xử lý {args.limit}/{len(structure)} "
             f"topic đầu tiên rồi export CSV (test nhanh) ──")
         structure = structure[:args.limit]
+
+    # ---- --rag-only: chỉ chunk + embed content đã có trong cache rồi thoát ----
+    if args.rag_only:
+        content = load_json(caches[3], {}) or {}
+        if not any(r["topic_slug"] in content for r in structure):
+            sys.exit(f"--rag-only cần content đã gen trong {caches[3]} — chạy "
+                     "pipeline đầy đủ trước.")
+        ok = _run_rag(args, structure, content, out_dir, rag_dsn, rag_sources,
+                      only_slugs={r["topic_slug"] for r in structure})
+        sys.exit(0 if ok else 1)
 
     # ---- Guard 0 token: xác nhận mục lục TRƯỚC khi đốt quota AI ----
     # Mục lục sai (offset lệch, AI đoán nhầm) là lỗi đắt nhất: mọi stage sau
@@ -473,6 +528,10 @@ def main():
         log(f"   review_report.md : báo cáo thẩm định (đọc trước khi import!)")
     _report_usage([client, reviewer], work / "usage.json")
 
+    if args.rag:
+        _run_rag(args, structure, content, out_dir, rag_dsn, rag_sources,
+                 only_slugs=set(completed))
+
     # Bị dừng vì HẾT HẠN MỨC (Claude subscription / quota Gemini) và còn topic dở:
     # thoát mã 42 để runner tự động (watch_drive.py — Phần B) biết là "tạm dừng, chờ
     # reset rồi chạy tiếp", phân biệt với hoàn tất (0) hay lỗi thật (1).
@@ -483,6 +542,49 @@ def main():
 
     log("\n✅ Hoàn tất. Import thử topics.csv + multichoice.csv, "
         "upload thư mục images/ theo manifest.json.")
+
+
+def _run_rag(args, structure, content, out_dir, dsn, sources, only_slugs) -> bool:
+    """Stage 8: chunk + embed + upsert vào pgvector. Lỗi RAG KHÔNG làm hỏng
+    phần export đã xong — chỉ cảnh báo, chạy lại (--rag-only) là tiếp tục."""
+    import fitz
+    from stage_rag import Embedder, MockEmbedder, RagError, VectorStore, run_rag
+    rows = [r for r in structure
+            if r["topic_slug"] in only_slugs and r["topic_slug"] in content]
+    log(f"\n── Stage 8: RAG — chunk + embed {len(rows)} topic "
+        f"(model={'mock' if args.dry_run else args.rag_model}, "
+        f"nguồn={','.join(sources)}) ──")
+    store = None
+    try:
+        embedder = (MockEmbedder() if args.dry_run else Embedder(args.rag_model))
+        if dsn:
+            store = VectorStore(dsn, embedder.dim)
+        else:
+            log("   (không có DATABASE_URL -> chỉ xuất rag_chunks.csv, không ghi DB)")
+        with fitz.open(args.pdf) as doc:
+            st = run_rag(rows, content, doc, args.pdf.stem, out_dir, embedder, store,
+                         sources=sources, chunk_tokens=args.rag_chunk_tokens,
+                         overlap_tokens=args.rag_overlap,
+                         cache_path=out_dir.parent / "work" / "08_rag_vectors.json")
+    except RagError as e:
+        warn(f"RAG lỗi: {e}")
+        return False
+    finally:
+        if store is not None:
+            store.close()
+    log(f"   {st['topics']} topic → {st['chunks']} chunk "
+        f"(lesson={st['by_source']['lesson']}, book={st['by_source']['book']}); "
+        f"embed mới {st['embedded']} topic (còn lại dùng cache vector).")
+    if store is not None:
+        log(f"   pgvector: ghi {st['db_written']} topic, bỏ qua {st['db_skipped']} "
+            f"topic không đổi.")
+    if "book" in sources and st["by_source"]["book"] == 0 and st["topics"]:
+        log("   (PDF không có text layer — sách scan — nên chỉ có chunk từ bài học đã soạn)")
+    log("   rag_chunks.csv   : 1 dòng/chunk, kèm vector — import vào bảng rag_chunks")
+    log("   rag_schema.sql   : chạy TRƯỚC khi import CSV (bật pgvector + tạo bảng)")
+    if store is not None:
+        log(f"   thử truy vấn     : python3 rag_search.py \"câu hỏi\" --book {args.pdf.stem}")
+    return True
 
 
 def _report_usage(clients, usage_path):
