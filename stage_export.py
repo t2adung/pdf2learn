@@ -5,6 +5,7 @@ output/
 ├── topics.csv        (UTF-8 BOM, đúng cột template)
 ├── multichoice.csv   (UTF-8 BOM, đúng cột template)
 ├── images/           (đã tạo ở Stage 4)
+├── import-payload.json (topics + câu hỏi tự luận — khi bật stage essay)
 └── manifest.json     (bản đồ đối soát cho người upload ảnh + QC)
 
 Checklist validate:
@@ -25,6 +26,39 @@ TOPIC_COLS = ["module_slug", "module_title", "topic_slug", "topic_title",
 QUESTION_COLS = ["topic_slug", "question", "A", "B", "C", "D",
                  "correct_answer", "explanation_vi", "difficulty"]
 MIN_QUESTIONS = 3
+IMPORT_PAYLOAD_FILE = "import-payload.json"
+DEFAULT_TEACHER_ID = "00000000-0000-0000-0000-000000000000"
+
+
+def build_import_payload(structure: list, topic_contents: dict, essays: dict,
+                         teacher_id: str = DEFAULT_TEACHER_ID) -> dict:
+    """Payload import (topics + exercises tự luận) — khớp import-payload.sample.json.
+
+    topic_contents: {topic_slug: giá trị cột content đã compose (giống topics.csv)}.
+    Thứ tự key cố định theo file mẫu (deterministic, diff được giữa 2 lần chạy)."""
+    topics, exercises = [], []
+    for row in structure:
+        slug = row["topic_slug"]
+        topics.append({
+            "module_slug": row["module_slug"],
+            "module_title": row["module_title"],
+            "topic_slug": slug,
+            "topic_title": row["topic_title"],
+            "order": row["order"],
+            "level": row["level"],
+            "content": topic_contents.get(slug, ""),
+            "page_start": row.get("page_start"),
+        })
+        for q in essays.get(slug, []):
+            exercises.append({
+                "type": "essay",
+                "topic_slug": slug,
+                "question": q["question"],
+                "correct_answer": q["correct_answer"],
+                "explanation_vi": q.get("explanation_vi", ""),
+                "difficulty": min(3, max(1, int(q.get("difficulty", 1)))),
+            })
+    return {"teacher_id": teacher_id, "topics": topics, "exercises": exercises}
 
 
 def _compose_content(row: dict, entry: dict, images: list, questions: list,
@@ -57,14 +91,17 @@ def export(structure: list, content: dict, images: dict, questions: dict,
            out_dir, pdf_name: str, model: str, only_slugs=None, label="",
            extra_warnings=None, content_format: str = "markdown",
            subject: str = "", grade: str = "", export_json: bool = False,
-           density: str = "full"):
+           density: str = "full", essays: dict = None,
+           teacher_id: str = DEFAULT_TEACHER_ID):
     """only_slugs: nếu khác None, chỉ xuất các topic trong tập này (batch/delta export).
     content_format: "markdown" (mặc định) | "json" — xem _compose_content.
-    export_json: ghi thêm json/{topic_slug}.json (format đích, pretty) cho mỗi topic."""
+    export_json: ghi thêm json/{topic_slug}.json (format đích, pretty) cho mỗi topic.
+    essays: {topic_slug: [câu tự luận]} — khác None thì ghi import-payload.json."""
     if only_slugs is not None:
         structure = [r for r in structure if r["topic_slug"] in only_slugs]
     out_dir.mkdir(parents=True, exist_ok=True)
     topic_slugs = set()
+    topic_contents = {}
     problems = []
 
     # ---- topics.csv ----
@@ -75,6 +112,10 @@ def export(structure: list, content: dict, images: dict, questions: dict,
         for row in structure:
             slug = row["topic_slug"]
             topic_slugs.add(slug)
+            topic_contents[slug] = _compose_content(
+                row, content.get(slug, {}), images.get(slug, []),
+                questions.get(slug, []), content_format=content_format,
+                subject=subject, grade=grade, density=density)
             w.writerow({
                 "module_slug": row["module_slug"],
                 "module_title": row["module_title"],
@@ -83,12 +124,7 @@ def export(structure: list, content: dict, images: dict, questions: dict,
                 "order": row["order"],
                 "level": row["level"],
                 "page_start": row["page_start"],
-                "content": _compose_content(row, content.get(slug, {}),
-                                            images.get(slug, []),
-                                            questions.get(slug, []),
-                                            content_format=content_format,
-                                            subject=subject, grade=grade,
-                                            density=density),
+                "content": topic_contents[slug],
             })
             if export_json:
                 lo = compose_learning_object(row, content.get(slug, {}),
@@ -124,6 +160,18 @@ def export(structure: list, content: dict, images: dict, questions: dict,
                             "difficulty": q["difficulty"]})
                 n_questions += 1
 
+    # ---- import-payload.json (topics + câu hỏi tự luận) ----
+    n_essays = 0
+    if essays is not None:
+        payload = build_import_payload(structure, topic_contents, essays,
+                                       teacher_id=teacher_id)
+        n_essays = len(payload["exercises"])
+        for row in structure:
+            if not essays.get(row["topic_slug"]):
+                problems.append(f"{row['topic_slug']}: chưa có câu hỏi tự luận")
+        (out_dir / IMPORT_PAYLOAD_FILE).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
     # ---- manifest.json ----
     manifest = {
         "source_pdf": pdf_name,
@@ -132,12 +180,14 @@ def export(structure: list, content: dict, images: dict, questions: dict,
         "stats": {"modules": len({r["module_slug"] for r in structure}),
                   "topics": len(structure),
                   "questions": n_questions,
+                  "essays": n_essays,
                   "images": sum(len(v) for v in images.values())},
         "topics": [{
             "topic_slug": r["topic_slug"],
             "topic_title": r["topic_title"],
             "pages": f"{r['page_start']}-{r['page_end']}",
             "n_questions": len(questions.get(r["topic_slug"], [])),
+            "n_essays": len((essays or {}).get(r["topic_slug"], [])),
             "images": images.get(r["topic_slug"], []),
         } for r in structure],
         "warnings": problems + list(extra_warnings or []),
@@ -150,6 +200,8 @@ def export(structure: list, content: dict, images: dict, questions: dict,
     log(f"   topics.csv       : {len(structure)} topics")
     log(f"   multichoice.csv  : {n_questions} câu hỏi")
     log(f"   images/          : {manifest['stats']['images']} hình")
+    if essays is not None:
+        log(f"   {IMPORT_PAYLOAD_FILE}: {n_essays} câu tự luận")
     if export_json:
         log(f"   json/            : {len(structure)} file bài học (format đích)")
     log(f"   manifest.json    : bản đồ đối soát")

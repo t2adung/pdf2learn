@@ -9,6 +9,8 @@ Pipeline AI biến một PDF giáo trình (kể cả PDF **scan**) thành gói h
   🌍 Liên hệ thực tế → 🖼️ Hình minh hoạ → ✅ Trả lời câu hỏi khởi động,
 - đính **nguyên trang sách** vào đúng mục nội dung (0 token),
 - sinh **câu hỏi trắc nghiệm** phủ hết kiến thức, có pass tự giải kiểm chứng đáp án,
+- sinh **câu hỏi tự luận** 10–12 câu/bài (mặc định bật), ưu tiên câu hỏi có sẵn trong
+  box in màu của sách, dạng định nghĩa / liệt kê / giải thích → `import-payload.json`,
 - **cross-model review** (tuỳ chọn) + **quality checks** thuần code + **báo cáo token**,
 - export đúng template: `topics.csv`, `multichoice.csv`, `images/`, `manifest.json`
   (tuỳ chọn `output/json/` — bộ Learning Object JSON hoàn chỉnh từng bài).
@@ -380,7 +382,8 @@ cửa sổ hạn mức reset, chạy lại **đúng lệnh cũ** — topic đã 
 | `--limit N` | `0` (làm hết) | CHỈ xử lý **N bài đầu** rồi export luôn — test nhanh bài 1–2. Cache giữ nguyên: bỏ cờ này chạy lại sẽ làm tiếp phần còn lại |
 | `--no-images` | tắt | bỏ stage ảnh cho nhẹ; lấy ảnh sau bằng cách chạy lại bỏ cờ này |
 | `--no-validate` | tắt | bỏ pass tự giải kiểm chứng đáp án (nhanh hơn, **không khuyến nghị**) |
-| `--dpi N` | `0` (tắt) | nén trang PDF **scan** độ phân giải cao về N dpi grayscale trước khi gửi → giảm token mạnh (khuyến nghị `110`). Có guard chống upscale: scan đã nhỏ thì tự giữ nguyên |
+| `--no-essay` | tắt | bỏ bước sinh câu hỏi tự luận (mặc định **bật**, +1 request/topic) |
+| `--dpi N` | `0` (tắt) | nén trang PDF **scan** độ phân giải cao về N dpi grayscale trước khi gửi → giảm token mạnh (khuyến nghị `110`). Có guard chống upscale: scan đã nhỏ thì tự giữ nguyên. Áp dụng cả cho bước tự luận |
 
 ### Hình minh hoạ
 
@@ -410,7 +413,44 @@ cửa sổ hạn mức reset, chạy lại **đúng lệnh cũ** — topic đã 
 | Flag | Mặc định | Ý nghĩa |
 |---|---|---|
 | `--redo-from N` | — | xoá cache **stage N→7** rồi sinh lại (vd `5` = sinh lại câu hỏi; `≤5` reset đánh số batch; `≤4` xoá luôn ảnh) |
+| `--redo-essay` | tắt | xoá cache `work/05_essay.json` rồi sinh lại câu tự luận — giữ nguyên content/ảnh/MCQ |
 | `--redo-content` | tắt | sinh **LẠI content** (stage 3, gọi AI) + ảnh mindmap (stage 4), NHƯNG **giữ nguyên câu hỏi** (stage 5) + review (stage 6) đã có — 0 token cho câu hỏi. Dùng khi chỉ muốn làm mới bài học mà không đụng bộ câu hỏi đã duyệt |
+
+### Câu hỏi tự luận (essay)
+
+| Flag | Mặc định | Ý nghĩa |
+|---|---|---|
+| *(mặc định)* | bật | sau MCQ, mỗi bài sinh **10–12 câu tự luận**: AI đọc lại đúng các trang của bài, ưu tiên câu hỏi trong **box/khung in màu** & câu hỏi có sẵn trong sách (Câu hỏi, Luyện tập, Vận dụng…), thiếu thì tự soạn; ưu tiên dạng **định nghĩa / liệt kê / giải thích**. Kết quả ghi `output/import-payload.json` |
+| `--essay-only` | tắt | cho **khoá đã gen**: CHỈ sinh câu tự luận cho các topic đã có content + MCQ trong cache, **không** sinh/sửa content, ảnh, MCQ, review; rồi export lại snapshot (kèm `import-payload.json`). Không tạo batch mới |
+| `--teacher-id ID` | `00000000-…-000000000000` | giá trị `teacher_id` trong `import-payload.json` |
+
+```bash
+# Khoá mới — mặc định đã gồm bước tự luận:
+python3 main.py sach.pdf --level "Lớp 6"
+
+# Khoá đã gen trước đây — chỉ bổ sung câu tự luận (0 token cho content/MCQ):
+python3 main.py sach.pdf --level "Lớp 6" --essay-only --teacher-id <uuid>
+# Chưa ưng câu tự luận -> sinh lại riêng phần này:
+python3 main.py sach.pdf --level "Lớp 6" --essay-only --redo-essay
+```
+
+> Chạy lại lệnh thường (không `--essay-only`) trên khoá cũ cũng chỉ sinh thêm câu
+> tự luận cho topic còn thiếu (resume), nhưng sẽ **sinh tiếp cả content/MCQ** cho
+> topic chưa làm. `--essay-only` đảm bảo chỉ đụng tới phần tự luận.
+
+Định dạng `import-payload.json`:
+
+```json
+{
+  "teacher_id": "00000000-0000-0000-0000-000000000000",
+  "topics": [{"module_slug": "...", "module_title": "...", "topic_slug": "...",
+              "topic_title": "...", "order": 1, "level": "Lớp 6",
+              "content": "<giống cột content của topics.csv>", "page_start": 5}],
+  "exercises": [{"type": "essay", "topic_slug": "...", "question": "...",
+                 "correct_answer": "<đáp án mẫu>", "explanation_vi": "<hướng dẫn chấm>",
+                 "difficulty": 1}]
+}
+```
 
 ### Thẩm định chéo (cross-model review)
 
@@ -433,6 +473,7 @@ output/
 ├── topics.csv        # snapshot TÍCH LUỸ đầy đủ — dùng cho lần import chính thức
 ├── multichoice.csv   #   (UTF-8 BOM, đúng cột template; ảnh tham chiếu bằng filename trần)
 ├── images/           # TẤT CẢ ảnh: {topic_slug}_{nn}.png|svg — upload riêng vào hệ thống
+├── import-payload.json # topics + câu hỏi tự luận (trừ khi --no-essay)
 ├── manifest.json     # bản đồ topic → ảnh → caption → nguồn + warnings + quality checks
 ├── json/             # (nếu --export-json) 1 file Learning Object / topic theo format đích
 ├── review_report.md  # (nếu --review) báo cáo thẩm định — ĐỌC TRƯỚC KHI IMPORT
@@ -457,6 +498,7 @@ Kết quả trung gian mỗi stage lưu ở `runs/<tên-pdf>/work/`:
 3. Content    Learning Object JSON (objectives/sections/mindmap/…)        → work/03_content.json
 4. Images     đính nguyên trang sách + vẽ mindmap SVG (0 token)           → work/04_images.json + output/images/
 5. Questions  MCQ bám key_points (coverage) + pass tự giải kiểm chứng     → work/05_questions.json
+5b. Essay     10-12 câu tự luận/bài, ưu tiên box màu/câu hỏi trong sách     → work/05_essay.json
 6. Review     (--review) model thứ 2 thẩm định content + câu hỏi          → work/06_review.json
 ─ hết vòng lặp ─
 7. Export     batch delta + snapshot full + quality checks                → output/

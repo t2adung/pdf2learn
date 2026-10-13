@@ -8,6 +8,8 @@ Pipeline 6 stage, kết quả trung gian lưu ở runs/<tên-pdf>/work/:
   3. Content    : mỗi topic -> Markdown bài học + key_points (AI, chunk theo trang)
   4. Images     : trích ảnh PDF + AI lọc; fallback sinh SVG diagram
   5. Questions  : MCQ theo key_points (coverage) + pass validation đáp án
+     Essay      : 10-12 câu tự luận/bài, ưu tiên câu hỏi trong box màu của sách
+                  (mặc định BẬT; tắt bằng --no-essay)
   6. Export     : CSV UTF-8 BOM đúng template + manifest.json
 
 Resume: mặc định LUÔN resume — stage/topic đã xong sẽ bỏ qua (an toàn khi
@@ -20,6 +22,7 @@ Dùng:
   python main.py sach.pdf --dry-run          # test KHÔNG cần API key (mock AI)
   python main.py sach.pdf --redo-from 5      # xoá cache stage 5+, sinh lại câu hỏi
   python main.py sach.pdf --no-images --no-validate   # nhanh, ít request
+  python main.py sach.pdf --essay-only       # khoá đã gen: CHỈ sinh thêm câu tự luận
 """
 import argparse
 import os
@@ -93,6 +96,18 @@ def main():
     ap.add_argument("--book-images", action="store_true",
                     help="nhúng THÊM ảnh trích từ trang PDF (AI lọc, +1 request/topic). "
                          "Mặc định TẮT: chỉ giữ mindmap SVG do code vẽ (0 token, gọn giao diện).")
+    ap.add_argument("--no-essay", action="store_true",
+                    help="bỏ bước sinh câu hỏi tự luận (mặc định BẬT: 10-12 câu/bài, "
+                         "+1 request/topic, ghi output/import-payload.json)")
+    ap.add_argument("--essay-only", action="store_true",
+                    help="cho khoá ĐÃ GEN: CHỈ sinh câu hỏi tự luận cho các topic đã "
+                         "có content + câu trắc nghiệm trong cache, KHÔNG sinh lại/thêm "
+                         "content, ảnh, MCQ, review. Rồi export lại (kèm import-payload.json)")
+    ap.add_argument("--redo-essay", action="store_true",
+                    help="xoá cache câu tự luận (work/05_essay.json) rồi sinh lại — "
+                         "giữ nguyên content/ảnh/MCQ")
+    ap.add_argument("--teacher-id", default="00000000-0000-0000-0000-000000000000",
+                    help="giá trị teacher_id trong import-payload.json")
     ap.add_argument("--no-validate", action="store_true",
                     help="bỏ qua pass kiểm chứng đáp án ở stage 5")
     ap.add_argument("--review", action="store_true",
@@ -106,6 +121,9 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="dùng MockGemini, không cần API key (test pipeline/format)")
     args = ap.parse_args()
+    if args.essay_only and args.no_essay:
+        sys.exit("--essay-only và --no-essay mâu thuẫn nhau — chỉ dùng 1 trong 2.")
+    essay_on = not args.no_essay
 
     # Đọc biến môi trường từ file .env nếu có (tiện chạy local, không phải export mỗi lần).
     # Không bắt buộc cài python-dotenv: nếu thiếu thì bỏ qua, vẫn dùng export/Secrets như cũ.
@@ -149,12 +167,29 @@ def main():
               3: work / "03_content.json", 4: work / "04_images.json",
               5: work / "05_questions.json", 6: work / "06_review.json"}
     f_export_state = work / "07_export_state.json"
+    f_essay = work / "05_essay.json"     # stage 5b: câu hỏi tự luận
+
+    # ---- --essay-only: chỉ áp dụng cho khoá ĐÃ GEN (có sẵn cache) ----
+    if args.essay_only:
+        if args.redo_from <= 5 or args.redo_content:
+            sys.exit("--essay-only không dùng chung với --redo-from <=5 / "
+                     "--redo-content (sẽ xoá content/câu hỏi đã gen). "
+                     "Muốn sinh lại câu tự luận: --essay-only --redo-essay")
+        missing = [f.name for f in (caches[2], caches[3], caches[5])
+                   if not f.exists()]
+        if missing and not args.toc_file:
+            sys.exit(f"--essay-only cần khoá đã gen trong {work} nhưng thiếu: "
+                     f"{', '.join(missing)}. Chạy pipeline đầy đủ trước "
+                     "(mặc định đã gồm bước sinh câu tự luận).")
 
     # ---- --redo-from: xoá cache từ stage N trở đi ----
     for n, f in caches.items():
         if n >= args.redo_from and f.exists():
             f.unlink()
             log(f"♻️  Xoá cache stage {n}: {f.name}")
+    if (args.redo_from <= 5 or args.redo_essay) and f_essay.exists():
+        f_essay.unlink()
+        log(f"♻️  Xoá cache câu tự luận: {f_essay.name}")
     if args.redo_from <= 4 and images_dir.exists():
         shutil.rmtree(images_dir)
     if args.redo_from <= 5 and f_export_state.exists():
@@ -254,6 +289,8 @@ def main():
         est = n_topics * (2 if args.no_validate else 3)
         if not args.no_images:
             est += n_topics
+        if essay_on:
+            est += n_topics
         print(f"\n👀 Kiểm tra mục lục phía trên: {n_topics} topic, "
               f"ước tính ~{est} request AI.")
         print("   Sai page range? Ctrl+C, sửa work/01_toc.json (hoặc dùng "
@@ -276,6 +313,7 @@ def main():
     from gemini import GeminiError
     from claude_cli import ClaudeError, ClaudeLimitError
     from stage_content import generate_content_one
+    from stage_essay import generate_essay_one
     from stage_images import generate_images_one
     from stage_questions import generate_questions_one
 
@@ -284,6 +322,10 @@ def main():
     images = load_json(caches[4], {}) or {}
     questions = load_json(caches[5], {}) or {}
     review = load_json(caches[6], {}) or {}
+    essays = load_json(f_essay, {}) or {}
+    if args.essay_only:
+        log("── --essay-only: CHỈ sinh câu hỏi tự luận cho topic đã gen "
+            "(không đụng content/ảnh/MCQ/review) ──")
 
     reviewer, with_pdf_flag = (None, False)
     if args.review:
@@ -296,15 +338,28 @@ def main():
     total = len(structure)
     for idx, row in enumerate(structure, 1):
         slug = row["topic_slug"]
+        if args.essay_only:
+            if slug not in content or slug not in questions:
+                log(f"── Topic {idx}/{total}: {slug} — chưa gen content/MCQ, bỏ qua ──")
+                continue
+            if slug in essays:
+                log(f"── Topic {idx}/{total}: {slug} ✓ (đã có câu tự luận, bỏ qua) ──")
+                continue
         steps_done = (slug in content
                       and (args.no_images or slug in images)
                       and slug in questions
-                      and (not args.review or slug in review))
-        if steps_done:
+                      and (not args.review or slug in review)
+                      and (not essay_on or slug in essays))
+        if steps_done and not args.essay_only:
             log(f"── Topic {idx}/{total}: {slug} ✓ (hoàn chỉnh, bỏ qua) ──")
             continue
         log(f"── Topic {idx}/{total}: {slug} — {row['topic_title']} ──")
         try:
+            if args.essay_only:
+                essays[slug] = generate_essay_one(doc, row, content[slug], client,
+                                                  dpi=args.dpi)
+                save_json(f_essay, essays)
+                continue
             if slug not in content:
                 content[slug] = generate_content_one(doc, row, client, dpi=args.dpi)
                 save_json(caches[3], content)
@@ -321,6 +376,10 @@ def main():
                 if dropped:
                     questions.setdefault("_dropped", {})[slug] = dropped
                 save_json(caches[5], questions)
+            if essay_on and slug not in essays:
+                essays[slug] = generate_essay_one(doc, row, content[slug], client,
+                                                  dpi=args.dpi)
+                save_json(f_essay, essays)
             if args.review and (slug not in review or "error" in review.get(slug, {})):
                 wp = (doc, reviewer) if with_pdf_flag else None
                 review[slug] = review_one(row, content[slug],
@@ -346,14 +405,26 @@ def main():
             log(f"   ✂️  [{r['topic_slug']}] loại: {r['question'][:60]}... ({r['reason'][:60]})")
 
     # topic "hoàn chỉnh" = đủ mọi bước theo cờ đang bật
-    completed = [r["topic_slug"] for r in structure
-                 if r["topic_slug"] in content
-                 and (args.no_images or r["topic_slug"] in images)
-                 and r["topic_slug"] in questions
-                 and (not args.review or r["topic_slug"] in review)]
+    # (--essay-only: khoá đã gen -> chỉ cần content + MCQ + câu tự luận)
+    if args.essay_only:
+        completed = [r["topic_slug"] for r in structure
+                     if r["topic_slug"] in content
+                     and r["topic_slug"] in questions
+                     and r["topic_slug"] in essays]
+    else:
+        completed = [r["topic_slug"] for r in structure
+                     if r["topic_slug"] in content
+                     and (args.no_images or r["topic_slug"] in images)
+                     and r["topic_slug"] in questions
+                     and (not args.review or r["topic_slug"] in review)
+                     and (not essay_on or r["topic_slug"] in essays)]
+    essays_out = essays if essay_on else None
 
     state = load_json(f_export_state, {"exported": {}, "next_batch": 1})
-    new_slugs = [s for s in completed if s not in state["exported"]]
+    # --essay-only không tạo batch delta: các topic đã export ở batch cũ; bản
+    # đầy đủ (kèm import-payload.json) nằm ở snapshot gốc output/.
+    new_slugs = ([] if args.essay_only
+                 else [s for s in completed if s not in state["exported"]])
 
     if new_slugs:
         n = state["next_batch"]
@@ -362,7 +433,8 @@ def main():
                pdf_name=args.pdf.name, model="mock" if args.dry_run else args.model,
                only_slugs=set(new_slugs), label=f" [BATCH {n:02d} — {len(new_slugs)} topic MỚI]",
                content_format=args.content_format, subject=args.subject,
-               grade=args.grade, export_json=args.export_json, density=args.density)
+               grade=args.grade, export_json=args.export_json, density=args.density,
+               essays=essays_out, teacher_id=args.teacher_id)
         # copy ảnh của riêng lô này vào batch để test upload trọn gói
         b_img = batch_dir / "images"
         for s in new_slugs:
@@ -394,7 +466,7 @@ def main():
            only_slugs=set(completed), label=" [FULL — snapshot tích luỹ]",
            extra_warnings=qc_warnings, content_format=args.content_format,
            subject=args.subject, grade=args.grade, export_json=args.export_json,
-           density=args.density)
+           density=args.density, essays=essays_out, teacher_id=args.teacher_id)
     if args.review and review:
         from stage_review import write_report
         write_report(review, structure, out_dir / "review_report.md")
