@@ -464,7 +464,7 @@ trợ giảng tra cứu (Retrieval-Augmented Generation). Chạy **sau export**,
 |---|---|---|
 | `--rag` | tắt | sau export: chunk + embed các topic hoàn chỉnh → bảng `rag_chunks` |
 | `--rag-only` | tắt | cho **khoá đã gen**: CHỈ chunk + embed content trong cache (không gọi AI, không cần `GEMINI_API_KEY`, không export lại) |
-| `--rag-dsn DSN` | `$DATABASE_URL` | chuỗi kết nối Postgres có pgvector |
+| `--rag-dsn DSN` | `$DATABASE_URL` | chuỗi kết nối Postgres có pgvector. **Bỏ trống = chỉ xuất `rag_chunks.csv`** để tự import |
 | `--rag-model M` | `thenlper/gte-small` | model sentence-transformers (gte-small: 384 chiều, tối đa 512 token). Nhận cả đường dẫn thư mục model đã tải sẵn |
 | `--rag-sources` | `lesson,book` | `lesson` = bài học đã soạn (stage 3); `book` = text layer PDF gốc theo trang (PDF scan không có text → tự bỏ qua) |
 | `--rag-chunk-tokens N` | `300` | trần token/chunk (đo bằng tokenizer của model, gồm header) — tự hạ nếu vượt giới hạn model |
@@ -492,7 +492,7 @@ cosine** và hàm `match_rag_chunks(...)` (xem `sql/rag_schema.sql`) — không 
 ```bash
 python3 main.py sach.pdf --level "Lớp 6" --rag      # khoá mới: gen + export + RAG
 python3 main.py sach.pdf --rag-only                 # khoá đã gen: chỉ RAG, 0 token AI
-python3 main.py sach.pdf --dry-run --rag            # test: embedder giả; thiếu DSN thì chỉ ghi chunks.jsonl
+python3 main.py sach.pdf --dry-run --rag            # test: embedder giả (vector ngẫu nhiên), vẫn xuất CSV
 
 # Nghiệm thu bước retrieve:
 python3 rag_search.py "Tế bào gồm những thành phần nào?" --book sach --k 5
@@ -508,7 +508,33 @@ python3 rag_search.py "quang hợp" --book sach --json   # JSON để ghép vào
 - Mỗi nhóm cắt theo ranh giới câu, gom tới `--rag-chunk-tokens`, chồng lấn
   `--rag-overlap`. Khi embed, mỗi chunk được gắn header ngữ cảnh
   `Bài: <tên bài> › Mục: <mục>` để chunk ngắn vẫn đủ nghĩa.
-- `output/rag/chunks.jsonl`: toàn bộ chunk + metadata để soát bằng mắt.
+- Vector cache ở `work/08_rag_vectors.json`: chạy lại, topic không đổi **không embed lại**.
+
+**Xuất file để tự import vào DB (giống `topics.csv`)** — luôn có, kể cả khi không đặt
+`DATABASE_URL`:
+
+| File | Nội dung |
+|---|---|
+| `output/rag_chunks.csv` | 1 dòng / chunk. Cột **trùng tên cột bảng `rag_chunks`**: `book, module_slug, module_title, topic_slug, topic_title, level, source, section, page_start, page_end, chunk_index, content, token_count, topic_hash, embedding_model, embedding`. Cột `embedding` là literal pgvector `[0.0123,-0.045,...]` (384 số) |
+| `output/rag_schema.sql` | schema đã điền sẵn số chiều — bật pgvector, tạo bảng, index HNSW, hàm `match_rag_chunks` |
+
+> Khác `topics.csv` (UTF-8 **có BOM** cho Excel), `rag_chunks.csv` là UTF-8 **không
+> BOM** — BOM sẽ dính vào tên cột đầu (`book`) và làm hỏng lệnh import.
+
+Import bằng `psql` (Postgres tự host hoặc Supabase — dùng connection string của project):
+
+```bash
+cd runs/sach/output
+psql "$DATABASE_URL" -f rag_schema.sql          # lần đầu (idempotent, chạy lại không sao)
+# Import lại sách đã có -> xoá bản cũ trước (bảng có khoá unique theo chunk):
+psql "$DATABASE_URL" -c "delete from rag_chunks where book = 'sach'"
+psql "$DATABASE_URL" -c "\copy rag_chunks(book,module_slug,module_title,topic_slug,topic_title,level,source,section,page_start,page_end,chunk_index,content,token_count,topic_hash,embedding_model,embedding) from 'rag_chunks.csv' with (format csv, header true)"
+```
+
+Supabase không dùng psql: mở SQL Editor, dán nội dung `rag_schema.sql` → Run, rồi
+Table Editor → `rag_chunks` → Insert → *Import data from CSV*. Với sách lớn (file CSV
+nhiều MB vì có vector) nên dùng `\copy` ở trên cho chắc.
+
 
 **Idempotent:** mỗi topic có `topic_hash` (hash toàn bộ chunk + tên model). Chạy lại
 → topic không đổi được bỏ qua (không embed lại); content đổi (vd sau `--redo-content`)
@@ -543,7 +569,7 @@ select * from match_rag_chunks('<vector 384 chiều>'::vector, 5, 'sach', null, 
 
 **Biến môi trường:** `GEMINI_API_KEY` (backend gemini, bắt buộc trừ `--dry-run`;
 **không** cần cho backend claude); `GROQ_API_KEY` / `OPENROUTER_API_KEY` (chỉ khi
-dùng reviewer tương ứng); `DATABASE_URL` (chỉ khi dùng `--rag`/`--rag-only`/`rag_search.py`).
+dùng reviewer tương ứng); `DATABASE_URL` (tuỳ chọn cho `--rag`/`--rag-only` — có thì ghi thẳng vào DB; bắt buộc cho `rag_search.py`).
 Có thể đặt trong file `.env` (chép từ `env.example`).
 
 ---
@@ -559,7 +585,8 @@ output/
 ├── manifest.json     # bản đồ topic → ảnh → caption → nguồn + warnings + quality checks
 ├── json/             # (nếu --export-json) 1 file Learning Object / topic theo format đích
 ├── review_report.md  # (nếu --review) báo cáo thẩm định — ĐỌC TRƯỚC KHI IMPORT
-├── rag/chunks.jsonl  # (nếu --rag/--rag-only) chunk đã đẩy vào pgvector, để soát
+├── rag_chunks.csv    # (nếu --rag/--rag-only) chunk + vector, import thẳng vào bảng rag_chunks
+├── rag_schema.sql    #   schema pgvector để chạy trước khi import CSV
 ├── batch-01/         # DELTA: chỉ các topic hoàn chỉnh trong lần chạy 1 (topics/mc/images/manifest)
 ├── batch-02/         # chỉ topic MỚI của lần chạy tiếp (sau khi hết quota, resume...)
 └── ...

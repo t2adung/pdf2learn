@@ -124,15 +124,17 @@ def main():
                     help="tự loại câu hỏi bị review đánh severity=high (mặc định chỉ báo cáo)")
     ap.add_argument("--rag", action="store_true",
                     help="sau export: chunk + embed nội dung bài giảng (model "
-                         "gte-small, chạy cục bộ, 0 token AI) vào PostgreSQL + "
-                         "pgvector để làm RAG. Cần DATABASE_URL (hoặc --rag-dsn) "
-                         "+ pip install -r requirements-rag.txt")
+                         "gte-small, chạy cục bộ, 0 token AI) -> output/rag_chunks.csv "
+                         "(import thẳng vào bảng pgvector) + ghi thẳng vào PostgreSQL "
+                         "nếu có DATABASE_URL/--rag-dsn. Cần pip install -r "
+                         "requirements-rag.txt")
     ap.add_argument("--rag-only", action="store_true",
                     help="cho khoá ĐÃ GEN: CHỈ chạy bước RAG trên content trong cache "
                          "(không gọi AI, không export lại)")
     ap.add_argument("--rag-dsn", default=None,
                     help="Postgres DSN cho kho vector (mặc định: biến môi trường "
-                         "DATABASE_URL). vd postgresql://user:pass@host:5432/db")
+                         "DATABASE_URL). Bỏ trống = chỉ xuất CSV. "
+                         "vd postgresql://user:pass@host:5432/db")
     ap.add_argument("--rag-model", default="thenlper/gte-small",
                     help="model embedding sentence-transformers (mặc định "
                          "thenlper/gte-small, 384 chiều)")
@@ -169,12 +171,9 @@ def main():
     if not args.pdf.exists():
         sys.exit(f"Không tìm thấy file: {args.pdf}")
 
-    # Kiểm tra cấu hình RAG TRƯỚC khi đốt quota AI (thiếu DSN mà chạy hết sách mới
-    # báo lỗi là phí). --dry-run cho phép thiếu DSN: chỉ ghi output/rag/chunks.jsonl.
+    # Không có DSN vẫn chạy được: chỉ xuất output/rag_chunks.csv (+ rag_schema.sql)
+    # để tự import vào DB; có DSN thì ghi thẳng vào pgvector.
     rag_dsn = (args.rag_dsn or os.environ.get("DATABASE_URL", "")).strip()
-    if (args.rag or args.rag_only) and not rag_dsn and not args.dry_run:
-        sys.exit("--rag cần Postgres có pgvector: export DATABASE_URL=postgresql://... "
-                 "(hoặc --rag-dsn). Xem README mục RAG.")
 
     # ---- client ----
     if args.rag_only:
@@ -561,12 +560,12 @@ def _run_rag(args, structure, content, out_dir, dsn, sources, only_slugs) -> boo
         if dsn:
             store = VectorStore(dsn, embedder.dim)
         else:
-            warn("--dry-run không có DATABASE_URL: chỉ ghi output/rag/chunks.jsonl, "
-                 "không ghi DB.")
+            log("   (không có DATABASE_URL -> chỉ xuất rag_chunks.csv, không ghi DB)")
         with fitz.open(args.pdf) as doc:
             st = run_rag(rows, content, doc, args.pdf.stem, out_dir, embedder, store,
                          sources=sources, chunk_tokens=args.rag_chunk_tokens,
-                         overlap_tokens=args.rag_overlap)
+                         overlap_tokens=args.rag_overlap,
+                         cache_path=out_dir.parent / "work" / "08_rag_vectors.json")
     except RagError as e:
         warn(f"RAG lỗi: {e}")
         return False
@@ -575,11 +574,16 @@ def _run_rag(args, structure, content, out_dir, dsn, sources, only_slugs) -> boo
             store.close()
     log(f"   {st['topics']} topic → {st['chunks']} chunk "
         f"(lesson={st['by_source']['lesson']}, book={st['by_source']['book']}); "
-        f"embed mới {st['embedded']} topic, bỏ qua {st['skipped']} topic không đổi.")
-    if sources and "book" in sources and st["by_source"]["book"] == 0 and st["topics"]:
+        f"embed mới {st['embedded']} topic (còn lại dùng cache vector).")
+    if store is not None:
+        log(f"   pgvector: ghi {st['db_written']} topic, bỏ qua {st['db_skipped']} "
+            f"topic không đổi.")
+    if "book" in sources and st["by_source"]["book"] == 0 and st["topics"]:
         log("   (PDF không có text layer — sách scan — nên chỉ có chunk từ bài học đã soạn)")
-    log(f"   rag/chunks.jsonl : soát chunk bằng mắt | thử truy vấn: "
-        f"python3 rag_search.py \"câu hỏi\" --book {args.pdf.stem}")
+    log("   rag_chunks.csv   : 1 dòng/chunk, kèm vector — import vào bảng rag_chunks")
+    log("   rag_schema.sql   : chạy TRƯỚC khi import CSV (bật pgvector + tạo bảng)")
+    if store is not None:
+        log(f"   thử truy vấn     : python3 rag_search.py \"câu hỏi\" --book {args.pdf.stem}")
     return True
 
 

@@ -19,8 +19,11 @@ Luồng (0 token AI — chỉ chạy model embedding cục bộ):
                trong DB -> bỏ qua (không embed lại); khác -> xoá + ghi lại trong
                1 transaction.
 
-Đầu ra phụ: output/rag/chunks.jsonl (toàn bộ chunk + metadata, không có vector)
-để soát chất lượng chunk bằng mắt.
+Đầu ra file (luôn có, kể cả khi không có DB):
+  output/rag_chunks.csv : mỗi dòng 1 chunk, cột = cột bảng rag_chunks, cột
+                          embedding là literal pgvector '[...]' -> import thẳng.
+  output/rag_schema.sql : schema (số chiều đã điền) để tạo bảng trước khi import.
+Vector được cache ở work/08_rag_vectors.json -> chạy lại không embed lại.
 """
 import hashlib
 import json
@@ -295,7 +298,7 @@ class VectorStore:
             raise RagError(
                 f"Bảng rag_chunks đang dùng {row[0]} nhưng model mới ra vector({self.dim}). "
                 "Mỗi DB chỉ 1 số chiều: dùng lại model cũ, hoặc dùng database/schema khác.")
-        cur.execute(SCHEMA_FILE.read_text(encoding="utf-8").replace("{dim}", str(self.dim)))
+        cur.execute(schema_sql(self.dim))
 
     def existing_hash(self, book, slug, model):
         cur = self.conn.execute(
@@ -337,13 +340,36 @@ class VectorStore:
 
 # ───────────────────────────── Stage entry ─────────────────────────────
 
+# Cột rag_chunks.csv = cột bảng rag_chunks (trừ id/created_at) -> import thẳng bằng
+# \copy rag_chunks(<RAG_CSV_COLS>) from 'rag_chunks.csv' with (format csv, header true)
+RAG_CSV_COLS = ["book", "module_slug", "module_title", "topic_slug", "topic_title",
+                "level", "source", "section", "page_start", "page_end", "chunk_index",
+                "content", "token_count", "topic_hash", "embedding_model", "embedding"]
+
+
+def vector_literal(vec) -> str:
+    """Vector -> literal pgvector '[0.012345,-0.5,...]' (6 chữ số thập phân là đủ
+    cho cosine; cùng dạng Postgres in ra khi SELECT embedding)."""
+    return "[" + ",".join(f"{float(x):.6f}".rstrip("0").rstrip(".") or "0"
+                          for x in vec) + "]"
+
+
+def schema_sql(dim: int) -> str:
+    return SCHEMA_FILE.read_text(encoding="utf-8").replace("{dim}", str(dim))
+
+
 def run_rag(structure: list, content: dict, doc, book: str, out_dir: Path,
             embedder, store=None, sources=SOURCES,
             chunk_tokens: int = DEFAULT_CHUNK_TOKENS,
-            overlap_tokens: int = DEFAULT_OVERLAP_TOKENS) -> dict:
-    """Chunk + embed + upsert mọi topic đã có content. Trả về thống kê.
+            overlap_tokens: int = DEFAULT_OVERLAP_TOKENS,
+            cache_path: Path = None) -> dict:
+    """Chunk + embed mọi topic đã có content -> output/rag_chunks.csv
+    (+ output/rag_schema.sql) và (nếu có store) upsert vào pgvector.
 
-    store=None -> chỉ ghi output/rag/chunks.jsonl (soát chunk, không cần DB)."""
+    cache_path: cache vector cục bộ {slug: {hash, vectors}} — topic không đổi thì
+    dùng lại vector, KHÔNG embed lại (kể cả khi chỉ xuất CSV, không có DB)."""
+    import csv
+
     max_ok = embedder.max_tokens - 2                     # chừa [CLS]/[SEP]
     if chunk_tokens > max_ok:
         warn(f"--rag-chunk-tokens {chunk_tokens} > giới hạn model ({max_ok}) "
@@ -351,12 +377,17 @@ def run_rag(structure: list, content: dict, doc, book: str, out_dir: Path,
         chunk_tokens = max_ok
     overlap_tokens = min(overlap_tokens, chunk_tokens // 2)
 
-    stats = {"topics": 0, "embedded": 0, "skipped": 0, "chunks": 0,
-             "by_source": {s: 0 for s in SOURCES}}
-    rag_dir = out_dir / "rag"
-    rag_dir.mkdir(parents=True, exist_ok=True)
-    jsonl = (rag_dir / "chunks.jsonl").open("w", encoding="utf-8")
-    try:
+    stats = {"topics": 0, "embedded": 0, "db_written": 0, "db_skipped": 0,
+             "chunks": 0, "by_source": {s: 0 for s in SOURCES}}
+    cache = {}
+    if cache_path and Path(cache_path).exists():
+        cache = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "rag_schema.sql").write_text(schema_sql(embedder.dim), encoding="utf-8")
+    # UTF-8 KHÔNG BOM (khác topics.csv): BOM làm hỏng tên cột đầu khi import vào DB.
+    with open(out_dir / "rag_chunks.csv", "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=RAG_CSV_COLS, quoting=csv.QUOTE_MINIMAL)
+        w.writeheader()
         for row in structure:
             slug = row["topic_slug"]
             if slug not in content:
@@ -368,22 +399,36 @@ def run_rag(structure: list, content: dict, doc, book: str, out_dir: Path,
                 continue
             stats["topics"] += 1
             stats["chunks"] += len(chunks)
-            for c in chunks:
-                stats["by_source"][c["source"]] += 1
-                jsonl.write(json.dumps({"book": book, "topic_slug": slug, **{
-                    k: c[k] for k in ("chunk_index", "source", "section", "page_start",
-                                      "page_end", "token_count", "embed_text")}},
-                    ensure_ascii=False) + "\n")
-            if store is None:
-                continue
             thash = topic_hash(chunks, embedder.model_name)
-            if store.existing_hash(book, slug, embedder.model_name) == thash:
-                stats["skipped"] += 1
-                continue
-            vectors = embedder.embed_passages([c["embed_text"] for c in chunks])
-            store.replace_topic(book, row, embedder.model_name, thash, chunks, vectors)
-            stats["embedded"] += 1
-            log(f"   [rag     ] {slug}: {len(chunks)} chunk -> pgvector")
-    finally:
-        jsonl.close()
+            hit = cache.get(slug)
+            if hit and hit.get("hash") == thash and len(hit["vectors"]) == len(chunks):
+                vectors = hit["vectors"]
+            else:
+                vectors = [[round(float(x), 6) for x in v] for v in
+                           embedder.embed_passages([c["embed_text"] for c in chunks])]
+                cache[slug] = {"hash": thash, "vectors": vectors}
+                stats["embedded"] += 1
+                log(f"   [rag     ] {slug}: embed {len(chunks)} chunk")
+            for c, v in zip(chunks, vectors):
+                stats["by_source"][c["source"]] += 1
+                w.writerow({
+                    "book": book, "module_slug": row["module_slug"],
+                    "module_title": row.get("module_title"), "topic_slug": slug,
+                    "topic_title": row.get("topic_title"), "level": row.get("level"),
+                    "source": c["source"], "section": c["section"],
+                    "page_start": c["page_start"], "page_end": c["page_end"],
+                    "chunk_index": c["chunk_index"], "content": c["content"],
+                    "token_count": c["token_count"], "topic_hash": thash,
+                    "embedding_model": embedder.model_name,
+                    "embedding": vector_literal(v)})
+            if store is not None:
+                if store.existing_hash(book, slug, embedder.model_name) == thash:
+                    stats["db_skipped"] += 1
+                else:
+                    import numpy as np
+                    store.replace_topic(book, row, embedder.model_name, thash, chunks,
+                                        [np.asarray(v, dtype="float32") for v in vectors])
+                    stats["db_written"] += 1
+            if cache_path:     # lưu sau mỗi topic: đứt giữa chừng vẫn giữ phần đã embed
+                Path(cache_path).write_text(json.dumps(cache), encoding="utf-8")
     return stats

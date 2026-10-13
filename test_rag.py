@@ -5,7 +5,7 @@ Chạy: python3 test_rag.py — KHÔNG gọi API, KHÔNG tải model (MockEmbedd
 Phần DB chỉ chạy khi có biến RAG_TEST_DSN trỏ tới Postgres có pgvector
 (dùng 1 database TEST riêng — test sẽ xoá dữ liệu của book "__test_rag__").
 """
-import json
+import csv
 import os
 import sys
 import tempfile
@@ -13,8 +13,8 @@ from pathlib import Path
 
 import fitz
 
-from stage_rag import (MockEmbedder, chunk_topic, pack_units, run_rag,
-                       split_units, topic_hash)
+from stage_rag import (RAG_CSV_COLS, MockEmbedder, chunk_topic, pack_units, run_rag,
+                       split_units, topic_hash, vector_literal)
 
 ROW = {"module_slug": "chuong-1", "module_title": "Chương 1",
        "topic_slug": "chuong-1-te-bao", "topic_title": "Tế bào",
@@ -76,14 +76,31 @@ def main():
     v1 = chunk_topic(ROW, {"content_markdown": "## A\n- ý một.\n- ý hai."}, None, count)
     check(len(v1) == 1 and "ý hai." in v1[0]["content"], "đọc được cache content v1 (markdown)")
 
-    # --- run_rag không DB: chỉ ghi chunks.jsonl ---
+    # --- run_rag không DB: xuất rag_chunks.csv + rag_schema.sql, cache vector ---
+    check(vector_literal([0.5, -0.1234567, 0.0, 1]) == "[0.5,-0.123457,0,1]",
+          "vector_literal đúng dạng pgvector")
     with tempfile.TemporaryDirectory() as td:
+        out, cache = Path(td) / "output", Path(td) / "08_rag_vectors.json"
         st = run_rag([ROW, {**ROW, "topic_slug": "chua-gen"}], {ROW["topic_slug"]: LO}, doc,
-                     "__test_rag__", Path(td), emb, store=None, chunk_tokens=9999)
-        lines = (Path(td) / "rag" / "chunks.jsonl").read_text(encoding="utf-8").splitlines()
-        check(st["topics"] == 1 and len(lines) == st["chunks"], "chunks.jsonl đủ dòng, bỏ topic chưa gen")
-        check(max(json.loads(x)["token_count"] for x in lines) <= emb.max_tokens - 2,
+                     "__test_rag__", out, emb, store=None, chunk_tokens=9999,
+                     cache_path=cache)
+        raw = (out / "rag_chunks.csv").read_bytes()
+        rows = list(csv.DictReader(raw.decode("utf-8").splitlines()))
+        check(not raw.startswith(b"\xef\xbb\xbf"), "CSV UTF-8 không BOM (import DB không hỏng cột đầu)")
+        check(list(rows[0]) == RAG_CSV_COLS, "header CSV = cột bảng rag_chunks")
+        check(st["topics"] == 1 and len(rows) == st["chunks"], "CSV đủ dòng, bỏ topic chưa gen")
+        check(all(r["embedding"].startswith("[") and r["embedding"].count(",") == emb.dim - 1
+                  for r in rows), f"cột embedding là vector {emb.dim} chiều")
+        check(max(int(r["token_count"]) for r in rows) <= emb.max_tokens - 2,
               "chunk_tokens vượt giới hạn model bị hạ xuống")
+        check("vector(384)" in (out / "rag_schema.sql").read_text(encoding="utf-8"),
+              "rag_schema.sql đã điền số chiều")
+        st2 = run_rag([ROW], {ROW["topic_slug"]: LO}, doc, "__test_rag__", out, emb,
+                      chunk_tokens=9999, cache_path=cache)
+        rows2 = list(csv.DictReader((out / "rag_chunks.csv").read_text(encoding="utf-8")
+                                    .splitlines()))
+        check(st["embedded"] == 1 and st2["embedded"] == 0 and rows2 == rows,
+              "chạy lại: dùng cache vector, không embed lại, CSV y hệt")
 
     # --- pgvector (tuỳ chọn) ---
     dsn = os.environ.get("RAG_TEST_DSN", "").strip()
@@ -93,22 +110,37 @@ def main():
         from stage_rag import VectorStore
         store = VectorStore(dsn, emb.dim)
         store.conn.execute("delete from rag_chunks where book='__test_rag__'")
+        cnt = ("select count(*) from rag_chunks where book='__test_rag__'")
         with tempfile.TemporaryDirectory() as td:
-            st1 = run_rag([ROW], {ROW["topic_slug"]: LO}, doc, "__test_rag__", Path(td), emb, store)
-            st2 = run_rag([ROW], {ROW["topic_slug"]: LO}, doc, "__test_rag__", Path(td), emb, store)
-            n = store.conn.execute("select count(*) from rag_chunks where book='__test_rag__'"
-                                   ).fetchone()[0]
-            check(st1["embedded"] == 1 and st2["skipped"] == 1 and n == st1["chunks"],
+            out, cache = Path(td) / "output", Path(td) / "cache.json"
+            st1 = run_rag([ROW], {ROW["topic_slug"]: LO}, doc, "__test_rag__", out, emb, store,
+                          cache_path=cache)
+            st2 = run_rag([ROW], {ROW["topic_slug"]: LO}, doc, "__test_rag__", out, emb, store,
+                          cache_path=cache)
+            n = store.conn.execute(cnt).fetchone()[0]
+            check(st1["db_written"] == 1 and st2["db_skipped"] == 1 and n == st1["chunks"],
                   "upsert idempotent: chạy lần 2 bỏ qua, không nhân đôi dòng")
             lo2 = {**LO, "key_points": ["Ý mới thay đổi."]}
-            st3 = run_rag([ROW], {ROW["topic_slug"]: lo2}, doc, "__test_rag__", Path(td), emb, store)
-            n3 = store.conn.execute("select count(*) from rag_chunks where book='__test_rag__'"
-                                    ).fetchone()[0]
-            check(st3["embedded"] == 1 and n3 == st3["chunks"], "content đổi -> thay toàn bộ chunk topic")
+            st3 = run_rag([ROW], {ROW["topic_slug"]: lo2}, doc, "__test_rag__", out, emb, store,
+                          cache_path=cache)
+            check(st3["db_written"] == 1 and store.conn.execute(cnt).fetchone()[0] == st3["chunks"],
+                  "content đổi -> thay toàn bộ chunk topic")
             target = chunk_topic(ROW, lo2, doc, count)[0]
             hits = store.search(emb.embed_query(target["embed_text"]), k=3, book="__test_rag__")
             check(hits and hits[0]["content"] == target["content"]
                   and abs(hits[0]["similarity"] - 1) < 1e-4, "match_rag_chunks trả đúng chunk top-1")
+
+            # import CSV đúng cách người dùng làm: xoá sách cũ rồi COPY ... FROM csv
+            store.conn.execute("delete from rag_chunks where book='__test_rag__'")
+            with store.conn.cursor().copy(
+                    f"copy rag_chunks ({', '.join(RAG_CSV_COLS)}) from stdin "
+                    "with (format csv, header true)") as cp:
+                cp.write((out / "rag_chunks.csv").read_bytes())
+            check(store.conn.execute(cnt).fetchone()[0] == st3["chunks"],
+                  "COPY rag_chunks.csv vào DB thành công, đủ dòng")
+            hits = store.search(emb.embed_query(target["embed_text"]), k=1, book="__test_rag__")
+            check(hits and abs(hits[0]["similarity"] - 1) < 1e-4,
+                  "vector import từ CSV truy vấn đúng (top-1 sim≈1)")
         store.conn.execute("delete from rag_chunks where book='__test_rag__'")
         store.close()
 

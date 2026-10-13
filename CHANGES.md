@@ -8,9 +8,12 @@
   pgvector, bảng `rag_chunks`, index HNSW cosine, hàm `match_rag_chunks` (`sql/rag_schema.sql`,
   tự chạy idempotent, tự `create extension vector`).
 - Chunk đo bằng tokenizer của model (mặc định 300 token, overlap 40, không vượt 512),
-  gắn header ngữ cảnh `Bài › Mục`; ghi `output/rag/chunks.jsonl` để soát.
+  gắn header ngữ cảnh `Bài › Mục`.
+- **Xuất `output/rag_chunks.csv` + `output/rag_schema.sql`** (luôn có, kể cả không có DB):
+  cột trùng bảng `rag_chunks`, vector dạng literal pgvector, UTF-8 không BOM → import
+  thẳng bằng `\copy`. Vector cache ở `work/08_rag_vectors.json` (không embed lại).
 - Idempotent theo topic (`topic_hash`): không đổi → bỏ qua; đổi → thay trong 1 transaction.
-  Lỗi RAG không làm hỏng export. Thiếu `DATABASE_URL` → báo lỗi TRƯỚC khi gọi AI.
+  Lỗi RAG không làm hỏng export. Không có `DATABASE_URL` → chỉ xuất CSV.
 - Cờ mới: `--rag`, `--rag-only` (khoá đã gen, không cần API key), `--rag-dsn`,
   `--rag-model`, `--rag-sources`, `--rag-chunk-tokens`, `--rag-overlap`.
 - `rag_search.py`: truy vấn thử top-k. Phụ thuộc tuỳ chọn: `requirements-rag.txt`.
