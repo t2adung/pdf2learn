@@ -79,7 +79,8 @@ def main():
             rows = list(csv.DictReader(f))
         check(open(out / "essay.csv", "rb").read(3) == b"\xef\xbb\xbf", "essay.csv có UTF-8 BOM")
         check(len(rows) == ESSAY_MAX and list(rows[0]) == ["topic_slug", "question",
-              "correct_answer", "explanation_vi", "difficulty"], "essay.csv đúng cột, đủ dòng")
+              "answer", "explanation_vi", "difficulty"], "essay.csv đúng cột template, đủ dòng")
+        check(rows[0]["answer"] == essays[0]["correct_answer"], "cột answer = đáp án mẫu")
         check(rows[0]["question"] == essays[0]["question"], "essay.csv khớp nội dung câu hỏi")
         manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
         check(manifest["stats"]["essays"] == ESSAY_MAX, "manifest đếm câu tự luận")

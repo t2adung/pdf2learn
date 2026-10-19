@@ -441,7 +441,7 @@ python3 main.py sach.pdf --level "Lớp 6" --essay-only --redo-essay
 Định dạng `essay.csv` (UTF-8 BOM, giống `multichoice.csv`; 1 dòng / câu):
 
 ```
-topic_slug,question,correct_answer,explanation_vi,difficulty
+topic_slug,question,answer,explanation_vi,difficulty
 ```
 
 > Khoá đã có `work/05_essay.json` mà thiếu `essay.csv` (chạy bằng bản cũ): chạy lại
@@ -482,7 +482,7 @@ output/
 ├── topics.csv        # snapshot TÍCH LUỸ đầy đủ — dùng cho lần import chính thức
 ├── multichoice.csv   #   (UTF-8 BOM, đúng cột template; ảnh tham chiếu bằng filename trần)
 ├── images/           # TẤT CẢ ảnh: {topic_slug}_{nn}.png|svg — upload riêng vào hệ thống
-├── essay.csv         # câu hỏi tự luận (UTF-8 BOM): topic_slug,question,correct_answer,explanation_vi,difficulty
+├── essay.csv         # câu hỏi tự luận (UTF-8 BOM): topic_slug,question,answer,explanation_vi,difficulty
 ├── import-payload.json # topics + câu hỏi tự luận dạng JSON (trừ khi --no-essay)
 ├── manifest.json     # bản đồ topic → ảnh → caption → nguồn + warnings + quality checks
 ├── json/             # (nếu --export-json) 1 file Learning Object / topic theo format đích

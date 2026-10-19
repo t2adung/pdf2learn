@@ -27,8 +27,9 @@ TOPIC_COLS = ["module_slug", "module_title", "topic_slug", "topic_title",
 QUESTION_COLS = ["topic_slug", "question", "A", "B", "C", "D",
                  "correct_answer", "explanation_vi", "difficulty"]
 MIN_QUESTIONS = 3
-ESSAY_COLS = ["topic_slug", "question", "correct_answer", "explanation_vi",
-              "difficulty"]
+# Cột essay.csv theo essay_template.csv của hệ thống import (đáp án mẫu = "answer";
+# nội bộ / import-payload.json vẫn gọi là "correct_answer").
+ESSAY_COLS = ["topic_slug", "question", "answer", "explanation_vi", "difficulty"]
 ESSAY_CSV_FILE = "essay.csv"
 IMPORT_PAYLOAD_FILE = "import-payload.json"
 DEFAULT_TEACHER_ID = "00000000-0000-0000-0000-000000000000"
@@ -180,7 +181,10 @@ def export(structure: list, content: dict, images: dict, questions: dict,
             w = csv.DictWriter(f, fieldnames=ESSAY_COLS, quoting=csv.QUOTE_MINIMAL)
             w.writeheader()
             for ex in payload["exercises"]:
-                w.writerow({k: ex[k] for k in ESSAY_COLS})
+                w.writerow({"topic_slug": ex["topic_slug"], "question": ex["question"],
+                            "answer": ex["correct_answer"],
+                            "explanation_vi": ex["explanation_vi"],
+                            "difficulty": ex["difficulty"]})
 
     # ---- manifest.json ----
     manifest = {

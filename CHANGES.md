@@ -3,7 +3,8 @@
 ## `essay.csv` — câu hỏi tự luận dạng CSV để import DB
 
 - Export thêm `output/essay.csv` (và trong mỗi `batch-NN/`), UTF-8 BOM giống
-  `multichoice.csv`, cột: `topic_slug,question,correct_answer,explanation_vi,difficulty`.
+  `multichoice.csv`, cột theo `essay_template.csv`: `topic_slug,question,answer,explanation_vi,difficulty`
+  (`answer` = đáp án mẫu).
 - Khoá đã gen essay bằng bản trước (chỉ có `work/05_essay.json`): chạy lại với
   `--essay-only` → 0 token, chỉ export lại ra `essay.csv`.
 
