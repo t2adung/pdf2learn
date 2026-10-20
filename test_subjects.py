@@ -78,6 +78,13 @@ def main():
         ok = all(guide_block(p, part) for part in ("content", "mcq", "essay"))
         check(ok, f"{p.key}: có đủ hướng dẫn content/mcq/essay")
 
+    en = PROFILES["tieng-anh"]
+    check(all(x in guide_block(en, "content") for x in ("-s/-es", "-ed", "DẤU HIỆU", "bị động")),
+          "tieng-anh content: mẹo phát âm -s/-es, -ed, dấu hiệu thì, các dạng câu")
+    check("QUY TẮC - MẸO" in guide_block(en, "essay") and "-ed" in guide_block(en, "essay"),
+          "tieng-anh essay: có nhóm câu quy tắc - mẹo")
+    check("MẸO" in guide_block(en, "mcq"), "tieng-anh mcq: explanation_vi nêu mẹo/dấu hiệu")
+
     print("Chèn vào prompt:")
     doc = fitz.open()
     doc.new_page().insert_text((72, 72), "x")

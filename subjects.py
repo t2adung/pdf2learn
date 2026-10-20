@@ -115,27 +115,59 @@ PROFILES = {p.key: p for p in [
                         "comparative", "superlative", "passive", "conditional",
                         "getting started", "a closer look", "skills", "review"),
         content=(
-            "- Viết nội dung bằng TIẾNG ANH đơn giản theo trình độ; giải thích ngữ pháp "
-            "khó có thể kèm tiếng Việt ngắn trong ngoặc.\n"
-            "- sections: từ vựng chủ đề (word - nghĩa tiếng Việt - ví dụ), cấu trúc ngữ "
-            "pháp (công thức + ví dụ), mẫu câu giao tiếp, quy tắc phát âm nếu có.\n"
-            "- key_terms: từ vựng / cấu trúc quan trọng, definition kèm nghĩa tiếng Việt, "
-            "example là câu tiếng Anh.\n"
-            "- key_points: từ vựng, cấu trúc ngữ pháp, mẫu câu cụ thể có trong unit."),
+            "- TRỌNG TÂM: MẸO làm bài NGỮ PHÁP + PHÁT ÂM cho các điểm có trong unit "
+            "(từ vựng chỉ tối đa 1 mục ngắn). Giải thích bằng TIẾNG VIỆT; công thức, ví "
+            "dụ bằng TIẾNG ANH; phiên âm IPA đặt trong /.../.\n"
+            "- Được bổ sung mẹo / quy tắc ngữ pháp CHUẨN (kiến thức phổ thông) cho điểm "
+            "ngữ pháp có trong unit, kể cả khi sách không ghi mẹo — nhưng KHÔNG dạy điểm "
+            "ngữ pháp mà unit không có.\n"
+            "- Mỗi điểm ngữ pháp 1 section theo khung: Công thức (khẳng định / phủ định / "
+            "nghi vấn) → Cách dùng → DẤU HIỆU NHẬN BIẾT → MẸO nhớ / LỖI hay sai → ví dụ.\n"
+            "- Gợi ý nội dung mẹo theo dạng bài:\n"
+            "  + Phát âm -s/-es: /s/ sau âm vô thanh /p, t, k, f, θ/; /ɪz/ sau /s, z, ʃ, tʃ, "
+            "ʒ, dʒ/ (chữ s, x, z, sh, ch, ge, ce); còn lại /z/. Có mẹo nhớ phổ biến (vd "
+            "\"Thời phong kiến phương Tây\" cho /s/) thì nêu.\n"
+            "  + Phát âm -ed: /ɪd/ sau /t, d/; /t/ sau âm vô thanh /p, k, f, s, ʃ, tʃ, θ/; "
+            "còn lại /d/. Lưu ý: xét ÂM cuối, không xét chữ cái (vd laughed /t/).\n"
+            "  + Các thì: công thức + dấu hiệu (always, usually → hiện tại đơn; now, at "
+            "the moment, Look! → hiện tại tiếp diễn; since, for, already, yet, just → "
+            "hiện tại hoàn thành; yesterday, ago, last → quá khứ đơn...) + phân biệt cặp "
+            "thì dễ nhầm.\n"
+            "  + Các dạng câu (bị động, câu điều kiện, câu tường thuật, mệnh đề quan hệ, "
+            "so sánh, câu ước, câu hỏi đuôi, used to, V-ing / to V...): công thức + CÁC "
+            "BƯỚC biến đổi câu + lỗi hay sai.\n"
+            "- key_terms: tên quy tắc / cấu trúc; definition = công thức hoặc quy tắc "
+            "ngắn; example = câu tiếng Anh.\n"
+            "- key_points: mỗi công thức / dấu hiệu / mẹo là 1 ý kiểm tra được bằng bài tập.\n"
+            "- mindmap: root = điểm ngữ pháp chính; branches kiểu Công thức / Cách dùng / "
+            "Dấu hiệu / Mẹo - lỗi sai.\n"
+            "- hook: một lỗi hay gặp hoặc câu đố nhỏ (vd \"Vì sao watched đọc /t/ còn "
+            "wanted đọc /ɪd/?\")."),
         mcq=(
-            "- Câu hỏi và phương án bằng TIẾNG ANH; explanation_vi vẫn bằng tiếng Việt.\n"
-            "- Dạng: chọn từ/cụm từ điền vào chỗ trống, chia động từ đúng thì, chọn nghĩa "
-            "của từ, chọn câu đúng ngữ pháp, chọn đáp lời phù hợp trong hội thoại, phát "
-            "âm (phần gạch chân viết HOA, vd \"wAtch\").\n"
-            "- Phương án nhiễu: lỗi người Việt hay mắc (sai thì, sai dạng từ, sai giới từ, "
-            "từ gần nghĩa)."),
+            "- Câu hỏi và phương án bằng TIẾNG ANH; explanation_vi bằng tiếng Việt và PHẢI "
+            "nêu MẸO / DẤU HIỆU giúp chọn đáp án (vd \"có since → hiện tại hoàn thành\").\n"
+            "- Dạng ưu tiên: chọn từ có phần gạch chân phát âm khác (-s/-es, -ed; phần "
+            "gạch chân viết HOA, vd \"watchED\"), chia động từ theo dấu hiệu thời gian, "
+            "chọn cấu trúc câu đúng (bị động, điều kiện, so sánh...), chọn câu viết lại "
+            "đúng nghĩa, tìm lỗi sai.\n"
+            "- Phương án nhiễu: lỗi người Việt hay mắc (sai thì, quên -s ngôi thứ ba, xét "
+            "chữ cái thay vì âm cuối khi đọc -ed, sai trật tự bị động, nhầm loại câu điều "
+            "kiện, sai dạng từ)."),
         essay=(
-            "- Câu hỏi bằng TIẾNG ANH. Dạng ưu tiên: viết lại câu (rewrite) giữ nguyên "
-            "nghĩa, chia động từ trong ngoặc, sắp xếp từ thành câu, sửa lỗi sai, trả lời "
-            "câu hỏi đọc hiểu về đoạn văn/hội thoại ngắn trong sách, dịch câu ngắn.\n"
-            "- correct_answer: đáp án chuẩn bằng tiếng Anh (nhiều cách đúng thì liệt kê).\n"
-            "- explanation_vi: giải thích ngữ pháp / từ vựng bằng tiếng Việt.\n"
-            "- BỎ QUA bài nghe (listening) và bài nói tự do."),
+            "- Tập trung vào MẸO NGỮ PHÁP / PHÁT ÂM của unit. Trộn 2 nhóm:\n"
+            "  + ~1/3 câu QUY TẮC - MẸO (hỏi bằng tiếng Việt): \"Nêu quy tắc phát âm đuôi "
+            "-ed\", \"Dấu hiệu nhận biết thì hiện tại hoàn thành?\", \"Phân biệt hiện tại "
+            "hoàn thành và quá khứ đơn\", \"Nêu các bước chuyển câu chủ động sang bị "
+            "động\".\n"
+            "  + ~2/3 câu VẬN DỤNG (đề bằng tiếng Anh): xếp từ vào nhóm theo cách đọc "
+            "-s/-es hoặc -ed, chia động từ trong ngoặc theo dấu hiệu, viết lại câu (bị "
+            "động, điều kiện, tường thuật, so sánh...), tìm và sửa lỗi sai.\n"
+            "- correct_answer: đáp án đúng (nhiều cách đúng thì liệt kê) + 1 câu nêu quy "
+            "tắc áp dụng; câu quy tắc thì nêu đủ quy tắc + ví dụ.\n"
+            "- explanation_vi: mẹo / dấu hiệu nhận biết + lỗi hay gặp, và tiêu chí chấm.\n"
+            "- BỎ QUA bài nghe (listening), bài nói tự do và bài viết đoạn văn mở."),
+        validate=("- Với câu phát âm / chia thì / biến đổi câu: áp dụng đúng quy tắc (xét "
+                  "ÂM cuối, dấu hiệu thời gian, công thức) rồi mới chọn đáp án."),
     ),
     SubjectProfile(
         key="khoa-hoc", name="Khoa học tự nhiên",
