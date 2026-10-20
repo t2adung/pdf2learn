@@ -5,6 +5,7 @@ output/
 ├── topics.csv        (UTF-8 BOM, đúng cột template)
 ├── multichoice.csv   (UTF-8 BOM, đúng cột template)
 ├── images/           (đã tạo ở Stage 4)
+├── essay.csv         (UTF-8 BOM, câu hỏi tự luận — khi bật stage essay)
 ├── import-payload.json (topics + câu hỏi tự luận — khi bật stage essay)
 └── manifest.json     (bản đồ đối soát cho người upload ảnh + QC)
 
@@ -26,6 +27,10 @@ TOPIC_COLS = ["module_slug", "module_title", "topic_slug", "topic_title",
 QUESTION_COLS = ["topic_slug", "question", "A", "B", "C", "D",
                  "correct_answer", "explanation_vi", "difficulty"]
 MIN_QUESTIONS = 3
+# Cột essay.csv theo essay_template.csv của hệ thống import (đáp án mẫu = "answer";
+# nội bộ / import-payload.json vẫn gọi là "correct_answer").
+ESSAY_COLS = ["topic_slug", "question", "answer", "explanation_vi", "difficulty"]
+ESSAY_CSV_FILE = "essay.csv"
 IMPORT_PAYLOAD_FILE = "import-payload.json"
 DEFAULT_TEACHER_ID = "00000000-0000-0000-0000-000000000000"
 
@@ -171,6 +176,15 @@ def export(structure: list, content: dict, images: dict, questions: dict,
                 problems.append(f"{row['topic_slug']}: chưa có câu hỏi tự luận")
         (out_dir / IMPORT_PAYLOAD_FILE).write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        # essay.csv — cùng định dạng multichoice.csv (UTF-8 BOM), 1 dòng / câu
+        with open(out_dir / ESSAY_CSV_FILE, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=ESSAY_COLS, quoting=csv.QUOTE_MINIMAL)
+            w.writeheader()
+            for ex in payload["exercises"]:
+                w.writerow({"topic_slug": ex["topic_slug"], "question": ex["question"],
+                            "answer": ex["correct_answer"],
+                            "explanation_vi": ex["explanation_vi"],
+                            "difficulty": ex["difficulty"]})
 
     # ---- manifest.json ----
     manifest = {
@@ -201,7 +215,8 @@ def export(structure: list, content: dict, images: dict, questions: dict,
     log(f"   multichoice.csv  : {n_questions} câu hỏi")
     log(f"   images/          : {manifest['stats']['images']} hình")
     if essays is not None:
-        log(f"   {IMPORT_PAYLOAD_FILE}: {n_essays} câu tự luận")
+        log(f"   {ESSAY_CSV_FILE:<17}: {n_essays} câu tự luận")
+        log(f"   {IMPORT_PAYLOAD_FILE}: topics + câu tự luận (JSON)")
     if export_json:
         log(f"   json/            : {len(structure)} file bài học (format đích)")
     log(f"   manifest.json    : bản đồ đối soát")
