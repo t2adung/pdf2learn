@@ -488,7 +488,7 @@ Khác biệt chính theo môn (ví dụ):
 |---|---|---|
 | Toán | bài tập tính toán, nhiễu = lỗi tính sai thường gặp | bài tập + **lời giải từng bước**, hướng dẫn chấm theo bước |
 | Ngữ văn / Tiếng Việt | thể loại, biện pháp tu từ trong câu trích | đọc hiểu, nêu tác dụng biện pháp tu từ |
-| Tiếng Anh | bài học tập trung **mẹo ngữ pháp / phát âm** (đọc -s/-es, -ed; công thức + dấu hiệu các thì; các dạng câu bị động, điều kiện, tường thuật...); trắc nghiệm **100% tiếng Anh** (kể cả giải thích), giải thích nêu mẹo | ~1/3 câu hỏi quy tắc – mẹo + ~2/3 bài vận dụng (phân loại cách đọc, chia động từ, viết lại câu, sửa lỗi sai); **lời đề luôn tiếng Việt, ngữ liệu tiếng Anh** |
+| Tiếng Anh | bài học tập trung **mẹo ngữ pháp / phát âm** (đọc -s/-es, -ed; công thức + dấu hiệu các thì; các dạng câu bị động, điều kiện, tường thuật...); trắc nghiệm: câu hỏi + phương án **100% tiếng Anh**, giải thích tiếng Việt nêu mẹo | ~1/3 câu hỏi quy tắc – mẹo + ~2/3 bài vận dụng (phân loại cách đọc, chia động từ, viết lại câu, sửa lỗi sai); **lời đề luôn tiếng Việt, ngữ liệu tiếng Anh** |
 | KHTN / Khoa học | giải thích hiện tượng, quan niệm sai phổ biến | "Vì sao...?", bài tính ngắn có đơn vị |
 | Lịch sử & Địa lí | mốc thời gian, nhân vật, nguyên nhân–kết quả | trình bày diễn biến / ý nghĩa, so sánh vùng |
 

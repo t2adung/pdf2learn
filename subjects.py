@@ -144,12 +144,12 @@ PROFILES = {p.key: p for p in [
             "- hook: một lỗi hay gặp hoặc câu đố nhỏ (vd \"Vì sao watched đọc /t/ còn "
             "wanted đọc /ɪd/?\")."),
         mcq=(
-            "- 100% TIẾNG ANH, KHÔNG dùng tiếng Việt ở bất kỳ field nào: lời dẫn câu hỏi, "
-            "phương án VÀ CẢ explanation_vi (bỏ quy tắc \"explanation_vi bằng tiếng Việt\" "
-            "ở trên). Lời dẫn kiểu: \"Choose the word whose underlined part is pronounced "
-            "differently.\", \"Choose the correct answer to complete the sentence.\"\n"
-            "- explanation_vi (viết bằng tiếng Anh) PHẢI nêu MẸO / DẤU HIỆU giúp chọn "
-            "đáp án (vd \"'since' + a point in time → present perfect\").\n"
+            "- \"question\" và các phương án A/B/C/D: 100% TIẾNG ANH, KHÔNG dùng tiếng Việt "
+            "(kể cả lời dẫn). Lời dẫn kiểu: \"Choose the word whose underlined part is "
+            "pronounced differently.\", \"Choose the correct answer to complete the "
+            "sentence.\"\n"
+            "- explanation_vi: vẫn bằng TIẾNG VIỆT và PHẢI nêu MẸO / DẤU HIỆU giúp chọn "
+            "đáp án (vd \"có 'since' + mốc thời gian → thì hiện tại hoàn thành\").\n"
             "- Dạng ưu tiên: chọn từ có phần gạch chân phát âm khác (-s/-es, -ed; phần "
             "gạch chân viết HOA, vd \"watchED\"), chia động từ theo dấu hiệu thời gian, "
             "chọn cấu trúc câu đúng (bị động, điều kiện, so sánh...), chọn câu viết lại "
