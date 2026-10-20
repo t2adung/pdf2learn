@@ -84,6 +84,8 @@ def main():
     check("QUY TẮC - MẸO" in guide_block(en, "essay") and "-ed" in guide_block(en, "essay"),
           "tieng-anh essay: có nhóm câu quy tắc - mẹo")
     check("MẸO" in guide_block(en, "mcq"), "tieng-anh mcq: explanation_vi nêu mẹo/dấu hiệu")
+    check("KHÔNG dùng tiếng Việt" in guide_block(en, "mcq"),
+          "tieng-anh mcq: 100% tiếng Anh, kể cả explanation_vi")
     check("LỜI ĐỀ / YÊU CẦU luôn bằng TIẾNG VIỆT" in guide_block(en, "essay"),
           "tieng-anh essay: lời đề thống nhất tiếng Việt, ngữ liệu tiếng Anh")
 
