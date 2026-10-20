@@ -1,5 +1,17 @@
 # pdf2learn v2 — Content chuyển từ Markdown blob sang Learning Object JSON
 
+## Prompt theo môn học — `subjects.py`, `--subject-profile`
+
+- **Tự nhận diện môn bằng code (0 token)**: `--subject-profile` → `--subject` → tên
+  file PDF → tên chương/bài trong mục lục (cần ≥ 2 tiêu đề khớp, hơn hẳn môn khác);
+  không chắc chắn → `general` (prompt chung như cũ).
+- 8 bộ hướng dẫn: Toán, Ngữ văn/Tiếng Việt, Tiếng Anh, KHTN/Khoa học, Lịch sử & Địa lí,
+  GDCD/Đạo đức, Tin học, Công nghệ — nối vào cuối prompt content, trắc nghiệm, pass
+  giải lại đáp án và tự luận (khối "HƯỚNG DẪN RIÊNG MÔN ...", ưu tiên hơn quy tắc chung).
+- `--subject` trống → JSON export lấy tên môn nhận diện được.
+- Cache cũ không tự sinh lại; dùng `--redo-from 3/5` hoặc `--redo-essay` để áp dụng.
+- Test: `test_subjects.py` (0 token).
+
 ## Câu hỏi tự luận (essay) — `import-payload.json`
 
 - **Stage 5b mới (`stage_essay.py`), mặc định BẬT**: mỗi bài sinh 10–12 câu tự luận.

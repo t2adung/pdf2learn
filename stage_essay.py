@@ -14,6 +14,7 @@ Output khớp phần "exercises" của import payload (xem stage_export.py):
 """
 from render_markdown import content_markdown
 from stage_content import cut_pages
+from subjects import guide_block
 from utils import log, warn
 
 ESSAY_MIN, ESSAY_MAX = 10, 12
@@ -67,13 +68,14 @@ YÊU CẦU TỪNG FIELD (TEXT THUẦN, không markdown, bằng NGÔN NGỮ CỦA
   (vd "chỉ cần nêu đúng 3 ý bất kỳ", "ý chính cần có là ...") (<= 40 từ).
 - "difficulty": 1 = nhớ (định nghĩa, liệt kê), 2 = hiểu (giải thích, phân biệt),
   3 = vận dụng. Trộn các mức, phần lớn là 1-2.
-- Không trùng ý giữa các câu."""
+- Không trùng ý giữa các câu.{subject_guide}"""
 
 
 def generate_essay_one(doc, row: dict, content_entry: dict, client,
-                       dpi: int = 0) -> list:
+                       dpi: int = 0, subject_profile=None) -> list:
     """Sinh câu hỏi tự luận cho MỘT topic. Trả về list
-    [{question, correct_answer, explanation_vi, difficulty}] (tối đa ESSAY_MAX)."""
+    [{question, correct_answer, explanation_vi, difficulty}] (tối đa ESSAY_MAX).
+    subject_profile: SubjectProfile (subjects.py) — chèn hướng dẫn riêng theo môn."""
     slug = row["topic_slug"]
     log(f"   [essay   ] trang {row['page_start']}-{row['page_end']} -> "
         f"sinh {ESSAY_MIN}-{ESSAY_MAX} câu tự luận...")
@@ -82,7 +84,8 @@ def generate_essay_one(doc, row: dict, content_entry: dict, client,
         level=row["level"], topic_title=row["topic_title"],
         module_title=row["module_title"],
         content=content_markdown(content_entry or {}),
-        n_min=ESSAY_MIN, n_max=ESSAY_MAX)
+        n_min=ESSAY_MIN, n_max=ESSAY_MAX,
+        subject_guide=guide_block(subject_profile, "essay"))
     res = client.generate_json(
         [client.pdf_part(sub_pdf, f"{slug}_essay.pdf"), {"text": prompt}],
         ESSAY_SCHEMA, tag="essay", temperature=0.4)
