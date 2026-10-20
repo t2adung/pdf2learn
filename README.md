@@ -10,7 +10,7 @@ Pipeline AI biến một PDF giáo trình (kể cả PDF **scan**) thành gói h
 - đính **nguyên trang sách** vào đúng mục nội dung (0 token),
 - sinh **câu hỏi trắc nghiệm** phủ hết kiến thức, có pass tự giải kiểm chứng đáp án,
 - sinh **câu hỏi tự luận** 10–12 câu/bài (mặc định bật), ưu tiên câu hỏi có sẵn trong
-  box in màu của sách, dạng định nghĩa / liệt kê / giải thích → `import-payload.json`,
+  box in màu của sách, dạng định nghĩa / liệt kê / giải thích → `essay.csv` + `import-payload.json`,
 - **prompt theo môn học** (Toán, Ngữ văn, Tiếng Anh, KHTN, Sử–Địa, GDCD, Tin, Công nghệ):
   tự nhận diện môn bằng code (0 token) rồi chèn hướng dẫn riêng vào prompt soạn bài,
   trắc nghiệm và tự luận,
@@ -423,7 +423,7 @@ cửa sổ hạn mức reset, chạy lại **đúng lệnh cũ** — topic đã 
 
 | Flag | Mặc định | Ý nghĩa |
 |---|---|---|
-| *(mặc định)* | bật | sau MCQ, mỗi bài sinh **10–12 câu tự luận**: AI đọc lại đúng các trang của bài, ưu tiên câu hỏi trong **box/khung in màu** & câu hỏi có sẵn trong sách (Câu hỏi, Luyện tập, Vận dụng…), thiếu thì tự soạn; ưu tiên dạng **định nghĩa / liệt kê / giải thích**. Kết quả ghi `output/import-payload.json` |
+| *(mặc định)* | bật | sau MCQ, mỗi bài sinh **10–12 câu tự luận**: AI đọc lại đúng các trang của bài, ưu tiên câu hỏi trong **box/khung in màu** & câu hỏi có sẵn trong sách (Câu hỏi, Luyện tập, Vận dụng…), thiếu thì tự soạn; ưu tiên dạng **định nghĩa / liệt kê / giải thích**. Kết quả ghi `output/essay.csv` (import DB như `multichoice.csv`) + `output/import-payload.json` |
 | `--essay-only` | tắt | cho **khoá đã gen**: CHỈ sinh câu tự luận cho các topic đã có content + MCQ trong cache, **không** sinh/sửa content, ảnh, MCQ, review; rồi export lại snapshot (kèm `import-payload.json`). Không tạo batch mới |
 | `--teacher-id ID` | `00000000-…-000000000000` | giá trị `teacher_id` trong `import-payload.json` |
 
@@ -440,6 +440,15 @@ python3 main.py sach.pdf --level "Lớp 6" --essay-only --redo-essay
 > Chạy lại lệnh thường (không `--essay-only`) trên khoá cũ cũng chỉ sinh thêm câu
 > tự luận cho topic còn thiếu (resume), nhưng sẽ **sinh tiếp cả content/MCQ** cho
 > topic chưa làm. `--essay-only` đảm bảo chỉ đụng tới phần tự luận.
+
+Định dạng `essay.csv` (UTF-8 BOM, giống `multichoice.csv`; 1 dòng / câu):
+
+```
+topic_slug,question,answer,explanation_vi,difficulty
+```
+
+> Khoá đã có `work/05_essay.json` mà thiếu `essay.csv` (chạy bằng bản cũ): chạy lại
+> `--essay-only` — câu đã cache được bỏ qua, **0 token**, chỉ export lại.
 
 Định dạng `import-payload.json`:
 
@@ -514,7 +523,8 @@ output/
 ├── topics.csv        # snapshot TÍCH LUỸ đầy đủ — dùng cho lần import chính thức
 ├── multichoice.csv   #   (UTF-8 BOM, đúng cột template; ảnh tham chiếu bằng filename trần)
 ├── images/           # TẤT CẢ ảnh: {topic_slug}_{nn}.png|svg — upload riêng vào hệ thống
-├── import-payload.json # topics + câu hỏi tự luận (trừ khi --no-essay)
+├── essay.csv         # câu hỏi tự luận (UTF-8 BOM): topic_slug,question,answer,explanation_vi,difficulty
+├── import-payload.json # topics + câu hỏi tự luận dạng JSON (trừ khi --no-essay)
 ├── manifest.json     # bản đồ topic → ảnh → caption → nguồn + warnings + quality checks
 ├── json/             # (nếu --export-json) 1 file Learning Object / topic theo format đích
 ├── review_report.md  # (nếu --review) báo cáo thẩm định — ĐỌC TRƯỚC KHI IMPORT
