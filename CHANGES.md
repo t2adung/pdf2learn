@@ -13,7 +13,8 @@
 - **Tiếng Anh tập trung MẸO ngữ pháp / phát âm**: bài học theo khung Công thức →
   Cách dùng → Dấu hiệu nhận biết → Mẹo / lỗi hay sai (đọc -s/-es, -ed; các thì; bị động,
   điều kiện, tường thuật...); giải thích tiếng Việt, ví dụ tiếng Anh. Tự luận ~1/3 câu
-  quy tắc – mẹo + ~2/3 bài vận dụng; trắc nghiệm giải thích bằng mẹo / dấu hiệu.
+  quy tắc – mẹo + ~2/3 bài vận dụng, lời đề thống nhất tiếng Việt (ngữ liệu và đáp án
+  câu giữ tiếng Anh, kèm 1 câu quy tắc tiếng Việt); trắc nghiệm giải thích bằng mẹo / dấu hiệu.
 - Test: `test_subjects.py` (0 token).
 
 ## `essay.csv` — câu hỏi tự luận dạng CSV để import DB
