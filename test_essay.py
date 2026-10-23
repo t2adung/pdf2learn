@@ -22,7 +22,7 @@ LO = {"objectives": ["Nêu được cấu trúc thì hiện tại hoàn thành."
 
 
 class FakeClient:
-    """Trả về 16 câu (vượt ESSAY_MAX) + 1 câu rỗng + difficulty lệch để test làm sạch."""
+    """Trả về 16 câu (vượt ESSAY_MAX) + 1 câu rỗng + level lệch để test làm sạch."""
     def __init__(self):
         self.parts = None
 
@@ -32,10 +32,10 @@ class FakeClient:
     def generate_json(self, parts, schema, tag, temperature=0.3):
         assert tag == "essay"
         self.parts = parts
-        qs = [{"question": "", "correct_answer": "x", "explanation_vi": "", "difficulty": 1}]
-        qs += [{"question": f"Câu {i}?", "correct_answer": f"Đáp án {i}",
-                "explanation_vi": "giải thích", "difficulty": d}
-               for i, d in enumerate([0, 5, "2"] + [1, 2, 3] * 4 + [1])]
+        qs = [{"question": "", "correct_answer": "x", "explanation_vi": "", "level": 1}]
+        qs += [{"question": f"Câu {i}?", "correct_answer": f"(1) [1đ] Đáp án {i}",
+                "explanation_vi": "giải thích", "level": lv}
+               for i, lv in enumerate([0, 5, "2", 4] + [1, 2, 3] * 4)]
         return {"questions": qs}
 
 
@@ -53,10 +53,13 @@ def main():
     essays = generate_essay_one(doc, ROW, LO, client)
     prompt = client.parts[-1]["text"]
     check(client.parts[0] == {"pdf": client.parts[0]["pdf"]}, "gửi kèm sub-PDF của topic")
-    check("BOX" in prompt and "ĐỊNH NGHĨA" in prompt and "LIỆT KÊ" in prompt,
-          "prompt ưu tiên box màu + định nghĩa/liệt kê/giải thích")
+    check("BOX" in prompt and "VẬN DỤNG CAO" in prompt and "THANG ĐIỂM" in prompt,
+          "prompt ưu tiên box màu + ma trận 4 mức + thang điểm theo ý")
+    check("{" not in prompt.split("NỘI DUNG BÀI HỌC")[0], "prompt đã format hết placeholder")
     check(len(essays) == ESSAY_MAX, f"cắt còn tối đa {ESSAY_MAX} câu, bỏ câu rỗng")
-    check([q["difficulty"] for q in essays[:3]] == [1, 3, 2], "difficulty kẹp 1..3")
+    check([q["level"] for q in essays[:4]] == [1, 4, 2, 4], "level kẹp 1..4")
+    check([q["difficulty"] for q in essays[:4]] == [1, 3, 2, 3],
+          "difficulty = level kẹp 1..3 (Vận dụng cao -> 3)")
 
     with tempfile.TemporaryDirectory() as td:
         out = Path(td)

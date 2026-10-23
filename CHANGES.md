@@ -1,5 +1,23 @@
 # pdf2learn v2 — Content chuyển từ Markdown blob sang Learning Object JSON
 
+## Câu tự luận sát đề kiểm tra trên lớp / học kỳ + thang điểm theo ý
+
+- Prompt `stage_essay.py` trước đây chỉ ra câu dễ (định nghĩa/liệt kê, đáp án <= 60
+  từ, "phần lớn mức 1-2", bỏ hết câu cần hình). Nay:
+  - **Ma trận 4 mức** cố định (`LEVEL_QUOTA`): 12 câu = 4 Nhận biết / 4 Thông hiểu /
+    3 Vận dụng / 1 Vận dụng cao; bài ngắn vẫn phải có >= 2 câu mức 3-4.
+  - Mức 3-4 được tạo **tình huống / số liệu giả định mới** (kiến thức vẫn phải nằm
+    trong tài liệu), được chia ý a)/b), đáp án tới 150 từ.
+  - Câu trong sách cần hình/bảng: **chuyển thể sang lời** thay vì bỏ.
+  - `correct_answer` kèm **thang điểm theo ý**: `(1) [0,5đ] ...; (2) [0,5đ] ...`
+    (tổng 1đ mức 1-2, 2đ mức 3, 3đ mức 4) — grader AI phía sau chỉ đọc
+    `question` + `correct_answer`. `explanation_vi` = lưu ý khi chấm.
+- AI trả `level` 1-4; `difficulty` export vẫn 1-3 (Vận dụng cao -> 3) để khớp template
+  import. `level` gốc giữ trong `work/05_essay.json`.
+- Cảnh báo khi thiếu câu mức 3-4 hoặc đáp án thiếu thang điểm.
+- Khoá đã gen essay bằng prompt cũ: `--essay-only --redo-essay` để sinh lại riêng
+  phần tự luận.
+
 ## `essay.csv` — câu hỏi tự luận dạng CSV để import DB
 
 - Export thêm `output/essay.csv` (và trong mỗi `batch-NN/`), UTF-8 BOM giống

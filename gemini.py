@@ -280,26 +280,25 @@ class MockGemini(Gemini):
                            "difficulty": (i % 3) + 1})
             return {"questions": qs}
         if tag == "essay":
-            # 4 dạng mẫu x 3 = 12 câu (trong khoảng ESSAY_MIN-ESSAY_MAX)
-            return {"questions": [dict(q, question=f"{q['question']} [{i}]")
-                                  for i in range(1, 4) for q in [
-                {"question": "Khái niệm X là gì? (mock)",
-                 "correct_answer": "X là ... (định nghĩa theo sách, mock).",
-                 "explanation_vi": "Cần nêu đúng ý chính của định nghĩa X.",
-                 "difficulty": 1},
-                {"question": "Kể tên 2 đặc điểm của X. (mock)",
-                 "correct_answer": "Đặc điểm 1; Đặc điểm 2.",
-                 "explanation_vi": "Nêu đúng 2 đặc điểm bất kỳ trong bài.",
-                 "difficulty": 1},
-                {"question": "Vì sao X quan trọng trong đời sống? (mock)",
-                 "correct_answer": "Vì X có mặt khắp nơi và ... (mock).",
-                 "explanation_vi": "Ý chính: vai trò của X trong đời sống.",
-                 "difficulty": 2},
-                {"question": "Phân biệt Y và Z. (mock)",
-                 "correct_answer": "Y ...; còn Z ... (mock).",
-                 "explanation_vi": "Nêu được điểm khác nhau cốt lõi giữa Y và Z.",
-                 "difficulty": 3},
-            ]]}
+            # 12 câu theo ma trận 4/4/3/1 (Nhận biết/Thông hiểu/Vận dụng/Vận dụng cao)
+            samples = {
+                1: ("Khái niệm X là gì? (mock)",
+                    "(1) [0,5đ] X là ...; (2) [0,5đ] đặc trưng của X là ... (mock).",
+                    "Cần nêu đúng ý chính của định nghĩa X."),
+                2: ("Phân biệt Y và Z. (mock)",
+                    "(1) [0,5đ] Y ...; (2) [0,5đ] còn Z ... (mock).",
+                    "Nêu được điểm khác nhau cốt lõi giữa Y và Z."),
+                3: ("Cho tình huống T, hãy áp dụng X để giải quyết. (mock)",
+                    "(1) [1đ] xác định dùng X vì ...; (2) [1đ] kết quả ... (mock).",
+                    "Chấp nhận cách giải khác cho kết quả đúng."),
+                4: ("a) Đánh giá phương án P trong tình huống mới. b) Đề xuất cải tiến. (mock)",
+                    "a) (1) [1đ] ...; (2) [0,5đ] ...; b) (3) [1,5đ] đề xuất ... có giải thích (mock).",
+                    "Đề xuất hợp lý, có lập luận dựa trên X là đạt."),
+            }
+            return {"questions": [
+                {"level": lv, "question": f"{samples[lv][0]} [{i}]",
+                 "correct_answer": samples[lv][1], "explanation_vi": samples[lv][2]}
+                for lv, n in ((1, 4), (2, 4), (3, 3), (4, 1)) for i in range(1, n + 1)]}
         if tag == "review":
             return {"overall_score": 8,
                     "content_issues": [{"severity": "low",

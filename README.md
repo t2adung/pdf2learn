@@ -10,7 +10,7 @@ Pipeline AI biến một PDF giáo trình (kể cả PDF **scan**) thành gói h
 - đính **nguyên trang sách** vào đúng mục nội dung (0 token),
 - sinh **câu hỏi trắc nghiệm** phủ hết kiến thức, có pass tự giải kiểm chứng đáp án,
 - sinh **câu hỏi tự luận** 10–12 câu/bài (mặc định bật), ưu tiên câu hỏi có sẵn trong
-  box in màu của sách, dạng định nghĩa / liệt kê / giải thích → `essay.csv` + `import-payload.json`,
+  box in màu của sách, ma trận 4 mức Nhận biết → Vận dụng cao, đáp án kèm thang điểm theo ý → `essay.csv` + `import-payload.json`,
 - **cross-model review** (tuỳ chọn) + **quality checks** thuần code + **báo cáo token**,
 - export đúng template: `topics.csv`, `multichoice.csv`, `images/`, `manifest.json`
   (tuỳ chọn `output/json/` — bộ Learning Object JSON hoàn chỉnh từng bài).
@@ -420,7 +420,7 @@ cửa sổ hạn mức reset, chạy lại **đúng lệnh cũ** — topic đã 
 
 | Flag | Mặc định | Ý nghĩa |
 |---|---|---|
-| *(mặc định)* | bật | sau MCQ, mỗi bài sinh **10–12 câu tự luận**: AI đọc lại đúng các trang của bài, ưu tiên câu hỏi trong **box/khung in màu** & câu hỏi có sẵn trong sách (Câu hỏi, Luyện tập, Vận dụng…), thiếu thì tự soạn; ưu tiên dạng **định nghĩa / liệt kê / giải thích**. Kết quả ghi `output/essay.csv` (import DB như `multichoice.csv`) + `output/import-payload.json` |
+| *(mặc định)* | bật | sau MCQ, mỗi bài sinh **10–12 câu tự luận**: AI đọc lại đúng các trang của bài, ưu tiên câu hỏi trong **box/khung in màu** & câu hỏi có sẵn trong sách (Câu hỏi, Luyện tập, Vận dụng…), thiếu thì tự soạn (câu cần hình/bảng được chuyển thể sang lời). Độ khó theo **ma trận đề kiểm tra trên lớp / học kỳ 4 mức** — 12 câu = 4 Nhận biết / 4 Thông hiểu / 3 Vận dụng / 1 Vận dụng cao (tình huống mới, được chia ý a/b). Đáp án mẫu kèm **thang điểm theo ý** ngay trong `correct_answer`/`answer` (`(1) [0,5đ] ...; (2) [0,5đ] ...`; tổng 1đ mức 1–2, 2đ mức 3, 3đ mức 4) để AI chấm bài đọc được. `difficulty` giữ 1–3 theo template import (Vận dụng cao ghi 3; mức gốc 1–4 lưu ở `level` trong `work/05_essay.json`). Kết quả ghi `output/essay.csv` (import DB như `multichoice.csv`) + `output/import-payload.json` |
 | `--essay-only` | tắt | cho **khoá đã gen**: CHỈ sinh câu tự luận cho các topic đã có content + MCQ trong cache, **không** sinh/sửa content, ảnh, MCQ, review; rồi export lại snapshot (kèm `import-payload.json`). Không tạo batch mới |
 | `--teacher-id ID` | `00000000-…-000000000000` | giá trị `teacher_id` trong `import-payload.json` |
 
