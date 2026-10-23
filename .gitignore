@@ -11,3 +11,6 @@ runs/
 
 # Local env
 .env
+
+# Ảnh/PDF mục lục đầu vào của toc_from_images.py (dữ liệu local, không commit)
+toc_images/

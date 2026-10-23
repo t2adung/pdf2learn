@@ -11,6 +11,9 @@ Pipeline AI biến một PDF giáo trình (kể cả PDF **scan**) thành gói h
 - sinh **câu hỏi trắc nghiệm** phủ hết kiến thức, có pass tự giải kiểm chứng đáp án,
 - sinh **câu hỏi tự luận** 10–12 câu/bài (mặc định bật), ưu tiên câu hỏi có sẵn trong
   box in màu của sách, ma trận 4 mức Nhận biết → Vận dụng cao, đáp án kèm thang điểm theo ý → `essay.csv` + `import-payload.json`,
+- **prompt theo môn học** (Toán, Ngữ văn, Tiếng Anh, KHTN, Sử–Địa, GDCD, Tin, Công nghệ):
+  tự nhận diện môn bằng code (0 token) rồi chèn hướng dẫn riêng vào prompt soạn bài,
+  trắc nghiệm và tự luận,
 - **cross-model review** (tuỳ chọn) + **quality checks** thuần code + **báo cáo token**,
 - export đúng template: `topics.csv`, `multichoice.csv`, `images/`, `manifest.json`
   (tuỳ chọn `output/json/` — bộ Learning Object JSON hoàn chỉnh từng bài).
@@ -463,6 +466,44 @@ topic_slug,question,answer,explanation_vi,difficulty
                  "difficulty": 1}]
 }
 ```
+
+### Prompt theo môn học (`--subject-profile`)
+
+Prompt chung (định nghĩa / liệt kê / giải thích) hợp với môn "học thuộc" nhưng
+lệch với Toán (cần bài tập có lời giải), Ngữ văn (đọc hiểu, biện pháp tu từ),
+Tiếng Anh (ngữ pháp, từ vựng)... Pipeline **tự nhận diện môn bằng code (0 token)**
+rồi nối một khối `HƯỚNG DẪN RIÊNG MÔN ...` vào cuối prompt **content**,
+**trắc nghiệm** (+ pass giải lại đáp án) và **tự luận** (`subjects.py`).
+
+| Flag | Mặc định | Ý nghĩa |
+|---|---|---|
+| `--subject-profile` | `auto` | `auto` = tự nhận diện; hoặc chỉ định: `toan`, `ngu-van`, `tieng-anh`, `khoa-hoc`, `lich-su-dia-li`, `gdcd`, `tin-hoc`, `cong-nghe`; `general` = prompt chung (hành vi cũ) |
+| `--subject` | trống | tên môn ghi vào JSON; cũng là gợi ý nhận diện. Bỏ trống thì JSON lấy tên môn nhận diện được |
+
+Thứ tự nhận diện: `--subject-profile` → `--subject` → **tên file PDF**
+(`sgk-toan-4.pdf`, `khtn-lop6.pdf`, `tieng-anh-6.pdf`...) → **tên chương/bài** trong
+mục lục (cần ≥ 2 tiêu đề khớp từ khoá và hơn hẳn môn khác). Không chắc chắn thì
+dùng `general`. Kết quả in ra log: `── Môn học: Toán [toan] — nguồn: tên file ... ──`.
+
+Khác biệt chính theo môn (ví dụ):
+
+| Môn | Trắc nghiệm | Tự luận |
+|---|---|---|
+| Toán | bài tập tính toán, nhiễu = lỗi tính sai thường gặp | bài tập + **lời giải từng bước**, hướng dẫn chấm theo bước |
+| Ngữ văn / Tiếng Việt | thể loại, biện pháp tu từ trong câu trích | đọc hiểu, nêu tác dụng biện pháp tu từ |
+| Tiếng Anh | bài học tập trung **mẹo ngữ pháp / phát âm** (đọc -s/-es, -ed; công thức + dấu hiệu các thì; các dạng câu bị động, điều kiện, tường thuật...); trắc nghiệm: câu hỏi + phương án **100% tiếng Anh**, giải thích tiếng Việt nêu mẹo | ~1/3 câu hỏi quy tắc – mẹo + ~2/3 bài vận dụng (phân loại cách đọc, chia động từ, viết lại câu, sửa lỗi sai); **lời đề luôn tiếng Việt, ngữ liệu tiếng Anh** |
+| KHTN / Khoa học | giải thích hiện tượng, quan niệm sai phổ biến | "Vì sao...?", bài tính ngắn có đơn vị |
+| Lịch sử & Địa lí | mốc thời gian, nhân vật, nguyên nhân–kết quả | trình bày diễn biến / ý nghĩa, so sánh vùng |
+
+```bash
+python3 main.py sgk-toan-6.pdf --level "Lớp 6"                 # tự nhận Toán từ tên file
+python3 main.py sach.pdf --level "Lớp 6" --subject "Ngữ văn"   # gợi ý qua --subject
+python3 main.py sach.pdf --level "Lớp 6" --subject-profile general   # tắt, dùng prompt chung
+```
+
+> Cache cũ được sinh bằng prompt chung. Muốn áp dụng prompt theo môn cho khoá đã
+> gen: `--redo-from 3` (sinh lại content + câu hỏi) hoặc `--redo-from 5` (chỉ câu
+> hỏi) hoặc `--essay-only --redo-essay` (chỉ tự luận).
 
 ### Thẩm định chéo (cross-model review)
 

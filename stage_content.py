@@ -16,6 +16,7 @@ Kỹ thuật chống hallucination (giữ nguyên từ v1):
 """
 import fitz
 
+from subjects import guide_block
 from utils import log
 
 # Learning Object schema — mọi field đều là DATA, không chứa cú pháp markdown.
@@ -95,7 +96,7 @@ NHÓM ĐƯỢC PHÉP BỔ SUNG kiến thức ngoài tài liệu (phù hợp trì
 - "real_life": 1-2 ví dụ ứng dụng thực tế (mỗi ví dụ <= 20 từ).
 - "hook_answer": câu TRẢ LỜI trực tiếp cho chính câu hỏi "hook" ở trên, dùng
   kiến thức vừa học để chốt lại bài (<= 40 từ, 1-2 câu). BẮT BUỘC phải khớp và
-  giải đáp đúng câu hỏi trong "hook", không lạc đề."""
+  giải đáp đúng câu hỏi trong "hook", không lạc đề.{subject_guide}"""
 
 
 def cut_pages(doc: fitz.Document, page_start: int, page_end: int,
@@ -127,14 +128,17 @@ def cut_pages(doc: fitz.Document, page_start: int, page_end: int,
     return data
 
 
-def generate_content_one(doc: fitz.Document, row: dict, client, dpi: int = 0) -> dict:
-    """Sinh Learning Object (JSON) cho MỘT topic."""
+def generate_content_one(doc: fitz.Document, row: dict, client, dpi: int = 0,
+                         subject_profile=None) -> dict:
+    """Sinh Learning Object (JSON) cho MỘT topic.
+    subject_profile: SubjectProfile (subjects.py) — chèn hướng dẫn riêng theo môn."""
     slug = row["topic_slug"]
     log(f"   [content ] trang {row['page_start']}-{row['page_end']}...")
     sub_pdf = cut_pages(doc, row["page_start"], row["page_end"], dpi=dpi)
     prompt = CONTENT_PROMPT.format(level=row["level"],
                                    topic_title=row["topic_title"],
-                                   module_title=row["module_title"])
+                                   module_title=row["module_title"],
+                                   subject_guide=guide_block(subject_profile, "content"))
     lo = client.generate_json(
         [client.pdf_part(sub_pdf, f"{slug}.pdf"), {"text": prompt}],
         CONTENT_SCHEMA, tag="content")

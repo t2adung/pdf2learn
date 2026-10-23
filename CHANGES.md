@@ -27,8 +27,29 @@
 - AI trả `level` 1-4; `difficulty` export vẫn 1-3 (Vận dụng cao -> 3) để khớp template
   import. `level` gốc giữ trong `work/05_essay.json`.
 - Cảnh báo khi thiếu câu mức 3-4 hoặc đáp án thiếu thang điểm.
+- Kết hợp prompt theo môn (`subjects.py`): hướng dẫn môn vẫn ưu tiên về dạng câu, nhưng
+  luôn giữ ma trận level và thang điểm trong `correct_answer`; hướng dẫn tự luận môn
+  Toán chuyển điểm từng bước từ `explanation_vi` sang `correct_answer`.
 - Khoá đã gen essay bằng prompt cũ: `--essay-only --redo-essay` để sinh lại riêng
   phần tự luận.
+
+## Prompt theo môn học — `subjects.py`, `--subject-profile`
+
+- **Tự nhận diện môn bằng code (0 token)**: `--subject-profile` → `--subject` → tên
+  file PDF → tên chương/bài trong mục lục (cần ≥ 2 tiêu đề khớp, hơn hẳn môn khác);
+  không chắc chắn → `general` (prompt chung như cũ).
+- 8 bộ hướng dẫn: Toán, Ngữ văn/Tiếng Việt, Tiếng Anh, KHTN/Khoa học, Lịch sử & Địa lí,
+  GDCD/Đạo đức, Tin học, Công nghệ — nối vào cuối prompt content, trắc nghiệm, pass
+  giải lại đáp án và tự luận (khối "HƯỚNG DẪN RIÊNG MÔN ...", ưu tiên hơn quy tắc chung).
+- `--subject` trống → JSON export lấy tên môn nhận diện được.
+- Cache cũ không tự sinh lại; dùng `--redo-from 3/5` hoặc `--redo-essay` để áp dụng.
+- **Tiếng Anh tập trung MẸO ngữ pháp / phát âm**: bài học theo khung Công thức →
+  Cách dùng → Dấu hiệu nhận biết → Mẹo / lỗi hay sai (đọc -s/-es, -ed; các thì; bị động,
+  điều kiện, tường thuật...); giải thích tiếng Việt, ví dụ tiếng Anh. Tự luận ~1/3 câu
+  quy tắc – mẹo + ~2/3 bài vận dụng, lời đề thống nhất tiếng Việt (ngữ liệu và đáp án
+  câu giữ tiếng Anh, kèm 1 câu quy tắc tiếng Việt); trắc nghiệm: câu hỏi +
+  phương án 100% tiếng Anh, `explanation_vi` tiếng Việt nêu mẹo / dấu hiệu.
+- Test: `test_subjects.py` (0 token).
 
 ## `essay.csv` — câu hỏi tự luận dạng CSV để import DB
 

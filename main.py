@@ -31,6 +31,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from subjects import PROFILE_KEYS, detect_subject
 from utils import load_json, log, save_json, warn
 
 # Phiên bản shape của 03_content.json. v2 = Learning Object JSON
@@ -65,7 +66,14 @@ def main():
                          "(render bằng code, mặc định) hoặc json (Learning Object thô). "
                          "Đổi qua lại 0 token — chỉ cần chạy lại, cache giữ nguyên.")
     ap.add_argument("--subject", default="",
-                    help='tên môn học ghi vào JSON bài học, vd "Lịch sử và Địa lí"')
+                    help='tên môn học ghi vào JSON bài học, vd "Lịch sử và Địa lí" '
+                         '(cũng dùng làm gợi ý nhận diện môn cho prompt)')
+    ap.add_argument("--subject-profile", default="auto",
+                    choices=["auto"] + PROFILE_KEYS,
+                    help="bộ hướng dẫn prompt theo MÔN HỌC cho content / trắc nghiệm / "
+                         "tự luận. auto (mặc định) = tự nhận diện bằng code (0 token) "
+                         "từ --subject -> tên file PDF -> tên chương/bài; general = "
+                         "prompt chung (hành vi cũ)")
     ap.add_argument("--grade", default="",
                     help='khối lớp ghi vào JSON (mặc định: tự rút số từ --level, "Lớp 6" -> "6")')
     ap.add_argument("--export-json", action="store_true",
@@ -285,6 +293,15 @@ def main():
     if not structure:
         sys.exit("Không xác định được topic nào — kiểm tra lại PDF/mục lục.")
 
+    # ---- Nhận diện môn học (thuần code, 0 token) -> hướng dẫn prompt riêng ----
+    titles = [x for r in structure for x in (r["module_title"], r["topic_title"])]
+    profile, source = detect_subject(args.subject_profile, args.subject,
+                                     args.pdf.stem, titles)
+    log(f"── Môn học: {profile.name or 'chung (không riêng môn)'} "
+        f"[{profile.key}] — nguồn: {source} ──")
+    # --subject trống -> ghi tên môn nhận diện được vào JSON export
+    subject_name = args.subject or profile.name
+
     # ---- --limit N: chỉ xử lý + export N topic đầu (test nhanh bài 1,2) ----
     # Cắt structure ở đây => mọi stage sau (content/images/questions/export) đều
     # chỉ thấy N topic này. Cache của chúng vẫn dùng lại được khi chạy full sau.
@@ -388,7 +405,8 @@ def main():
                 old = essays.get(slug, [])
                 added = generate_essay_one(doc, row, content[slug], client,
                                            dpi=args.dpi, existing=old,
-                                           round_no=more["round"])
+                                           round_no=more["round"],
+                                           subject_profile=profile)
                 essays[slug] = old + added
                 save_json(f_essay, essays)
                 more["done"].append(slug)
@@ -397,11 +415,12 @@ def main():
                 continue
             if args.essay_only:
                 essays[slug] = generate_essay_one(doc, row, content[slug], client,
-                                                  dpi=args.dpi)
+                                                  dpi=args.dpi, subject_profile=profile)
                 save_json(f_essay, essays)
                 continue
             if slug not in content:
-                content[slug] = generate_content_one(doc, row, client, dpi=args.dpi)
+                content[slug] = generate_content_one(doc, row, client, dpi=args.dpi,
+                                                     subject_profile=profile)
                 save_json(caches[3], content)
             if not args.no_images and slug not in images:
                 images[slug] = generate_images_one(doc, row, content[slug],
@@ -411,14 +430,15 @@ def main():
                 save_json(caches[4], images)
             if slug not in questions:
                 qs, dropped = generate_questions_one(row, content[slug], client,
-                                                     validate=not args.no_validate)
+                                                     validate=not args.no_validate,
+                                                     subject_profile=profile)
                 questions[slug] = qs
                 if dropped:
                     questions.setdefault("_dropped", {})[slug] = dropped
                 save_json(caches[5], questions)
             if essay_on and slug not in essays:
                 essays[slug] = generate_essay_one(doc, row, content[slug], client,
-                                                  dpi=args.dpi)
+                                                  dpi=args.dpi, subject_profile=profile)
                 save_json(f_essay, essays)
             if args.review and (slug not in review or "error" in review.get(slug, {})):
                 wp = (doc, reviewer) if with_pdf_flag else None
@@ -472,7 +492,7 @@ def main():
         export(structure, content, images, questions, batch_dir,
                pdf_name=args.pdf.name, model="mock" if args.dry_run else args.model,
                only_slugs=set(new_slugs), label=f" [BATCH {n:02d} — {len(new_slugs)} topic MỚI]",
-               content_format=args.content_format, subject=args.subject,
+               content_format=args.content_format, subject=subject_name,
                grade=args.grade, export_json=args.export_json, density=args.density,
                essays=essays_out, teacher_id=args.teacher_id)
         # copy ảnh của riêng lô này vào batch để test upload trọn gói
@@ -510,7 +530,7 @@ def main():
            pdf_name=args.pdf.name, model="mock" if args.dry_run else args.model,
            only_slugs=set(completed), label=" [FULL — snapshot tích luỹ]",
            extra_warnings=qc_warnings, content_format=args.content_format,
-           subject=args.subject, grade=args.grade, export_json=args.export_json,
+           subject=subject_name, grade=args.grade, export_json=args.export_json,
            density=args.density, essays=essays_out, teacher_id=args.teacher_id)
     if args.review and review:
         from stage_review import write_report

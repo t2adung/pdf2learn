@@ -25,6 +25,7 @@ import re
 
 from render_markdown import content_markdown
 from stage_content import cut_pages
+from subjects import guide_block
 from utils import log, warn
 
 ESSAY_MIN, ESSAY_MAX = 10, 12
@@ -107,7 +108,7 @@ CỦA TÀI LIỆU GỐC — trừ explanation_vi):
   <= 150 từ.
 - "explanation_vi": BẰNG TIẾNG VIỆT — lưu ý khi chấm (<= 50 từ): ý nào bắt buộc,
   chấp nhận cách diễn đạt / ví dụ / cách giải khác tương đương, lỗi thường gặp.
-- Không trùng ý giữa các câu."""
+- Không trùng ý giữa các câu.{subject_guide}"""
 
 # Chèn vào prompt ở chế độ SINH THÊM (--essay-more)
 EXISTING_BLOCK = """
@@ -117,6 +118,11 @@ Câu mới KHÔNG được trùng câu hỏi hay trùng dữ kiện với các c
 (a) câu trong sách CHƯA được dùng; (b) BIẾN THỂ mới của câu trong sách hoặc của
 các câu trên (đổi số liệu / bối cảnh / hỏi ngược — xem mục BIẾN THỂ); (c) tự soạn.
 """
+
+# Hướng dẫn riêng môn được ưu tiên về DẠNG câu, nhưng không bỏ ma trận / thang điểm
+SUBJECT_KEEP_NOTE = (
+    "\n(Hướng dẫn môn chỉ điều chỉnh DẠNG câu và nội dung đáp án — vẫn GIỮ ma trận "
+    "level 1-4 và định dạng thang điểm \"(1) [..đ] ...\" trong correct_answer.)")
 
 
 def _norm(text: str) -> str:
@@ -131,13 +137,15 @@ def _level(q: dict) -> int:
 
 
 def generate_essay_one(doc, row: dict, content_entry: dict, client,
-                       dpi: int = 0, existing: list = None, round_no: int = 0) -> list:
+                       dpi: int = 0, existing: list = None, round_no: int = 0,
+                       subject_profile=None) -> list:
     """Sinh câu hỏi tự luận cho MỘT topic. Trả về list
     [{question, correct_answer, explanation_vi, difficulty, level, source}] (tối đa
     ESSAY_MAX). level = mức 1-4 của ma trận; difficulty = level kẹp về 1-3 cho
     template import.
     existing: các câu đã có (chế độ sinh thêm) -> chỉ trả về câu MỚI, bỏ câu trùng
-    nguyên văn; round_no > 0 thì gắn "round" vào từng câu mới."""
+    nguyên văn; round_no > 0 thì gắn "round" vào từng câu mới.
+    subject_profile: SubjectProfile (subjects.py) — chèn hướng dẫn riêng theo môn."""
     slug = row["topic_slug"]
     existing = existing or []
     log(f"   [essay   ] trang {row['page_start']}-{row['page_end']} -> "
@@ -146,13 +154,17 @@ def generate_essay_one(doc, row: dict, content_entry: dict, client,
     if existing:
         items = "\n".join(f"{i}. {q['question']}" for i, q in enumerate(existing, 1))
         existing_block = EXISTING_BLOCK.format(n=len(existing), items=items)
+    subject_guide = guide_block(subject_profile, "essay")
+    if subject_guide:
+        subject_guide += SUBJECT_KEEP_NOTE
     sub_pdf = cut_pages(doc, row["page_start"], row["page_end"], dpi=dpi)
     prompt = ESSAY_PROMPT.format(
         level=row["level"], topic_title=row["topic_title"],
         module_title=row["module_title"],
         content=content_markdown(content_entry or {}), existing_block=existing_block,
         n_min=ESSAY_MIN, n_max=ESSAY_MAX,
-        q1=LEVEL_QUOTA[1], q2=LEVEL_QUOTA[2], q3=LEVEL_QUOTA[3], q4=LEVEL_QUOTA[4])
+        q1=LEVEL_QUOTA[1], q2=LEVEL_QUOTA[2], q3=LEVEL_QUOTA[3], q4=LEVEL_QUOTA[4],
+        subject_guide=subject_guide)
     res = client.generate_json(
         [client.pdf_part(sub_pdf, f"{slug}_essay.pdf"), {"text": prompt}],
         ESSAY_SCHEMA, tag="essay", temperature=0.4)
