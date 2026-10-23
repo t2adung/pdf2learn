@@ -6,18 +6,33 @@ Khác MCQ (stage 5 — sinh từ key_points), câu tự luận ưu tiên LẤY T
   BOX IN MÀU (Câu hỏi, Luyện tập, Vận dụng, Em có biết, Hoạt động...) và các
   câu hỏi có sẵn trong bài — đây là nguồn câu hỏi chuẩn nhất của giáo viên.
 - Kèm nội dung bài học đã soạn (content markdown) làm ngữ cảnh soạn đáp án.
-- Mỗi bài 10-12 câu, ưu tiên dạng ĐỊNH NGHĨA / LIỆT KÊ / GIẢI THÍCH — dạng
-  chấm được bằng đáp án mẫu.
+- Mỗi bài 10-12 câu, độ khó theo ma trận đề kiểm tra trên lớp / học kỳ 4 mức
+  (Nhận biết / Thông hiểu / Vận dụng / Vận dụng cao), tỉ lệ cố định LEVEL_QUOTA.
+- Đáp án mẫu kèm THANG ĐIỂM THEO Ý ngay trong correct_answer — app phía sau
+  chấm bằng AI chỉ đọc question + correct_answer.
+- Ngoài câu lấy nguyên từ sách, AI được sinh BIẾN THỂ (đổi số liệu, đổi bối cảnh,
+  hỏi ngược...) giữ nguyên kiến thức + mức độ; field "source" ghi nguồn
+  book | variant | new để soát lại.
+- Chế độ SINH THÊM (--essay-more): truyền các câu đã có vào `existing`, AI chỉ
+  soạn câu MỚI (ưu tiên câu sách chưa dùng, rồi biến thể) — số câu tăng dần.
 
 Output khớp phần "exercises" của import payload (xem stage_export.py):
   {type: "essay", topic_slug, question, correct_answer, explanation_vi, difficulty}
+difficulty của template import chỉ có 1-3 -> mức 4 (Vận dụng cao) ghi là 3;
+mức gốc 1-4 giữ ở field "level" trong cache work/05_essay.json.
 """
+import re
+
 from render_markdown import content_markdown
 from stage_content import cut_pages
 from subjects import guide_block
 from utils import log, warn
 
 ESSAY_MIN, ESSAY_MAX = 10, 12
+# Ma trận 12 câu: Nhận biết / Thông hiểu / Vận dụng / Vận dụng cao (~35/35/20/10%)
+LEVEL_QUOTA = {1: 4, 2: 4, 3: 3, 4: 1}
+# "(1) [0,5đ] ..." — mỗi ý chấm có điểm trong ngoặc vuông
+RUBRIC_RE = re.compile(r"\[\s*\d+(?:[.,]\d+)?\s*đ\s*\]")
 
 ESSAY_SCHEMA = {
     "type": "object",
@@ -25,86 +40,160 @@ ESSAY_SCHEMA = {
         "questions": {"type": "array", "items": {
             "type": "object",
             "properties": {
+                "level": {"type": "integer"},
+                "source": {"type": "string", "enum": ["book", "variant", "new"]},
                 "question": {"type": "string"},
                 "correct_answer": {"type": "string"},
                 "explanation_vi": {"type": "string"},
-                "difficulty": {"type": "integer"},
             },
-            "required": ["question", "correct_answer", "explanation_vi", "difficulty"],
+            "required": ["level", "source", "question", "correct_answer", "explanation_vi"],
         }},
     },
     "required": ["questions"],
 }
 
-ESSAY_PROMPT = """Bạn là giáo viên ra đề TỰ LUẬN cho trình độ "{level}".
+ESSAY_PROMPT = """Bạn là giáo viên ra đề TỰ LUẬN cho trình độ "{level}", dùng cho bài
+KIỂM TRA TRÊN LỚP và KIỂM TRA HỌC KỲ.
 Tài liệu PDF đính kèm là các trang thuộc bài: "{topic_title}" (thuộc {module_title}).
 
 NỘI DUNG BÀI HỌC ĐÃ TÓM TẮT (tham khảo để soạn đáp án):
 {content}
-
-Nhiệm vụ: soạn {n_min}-{n_max} câu hỏi tự luận NGẮN cho bài này.
-Bài quá ngắn không đủ ý thì được ít hơn — KHÔNG lặp ý hay hỏi vụn vặt cho đủ số.
+{existing_block}
+Nhiệm vụ: soạn {n_max} câu hỏi tự luận cho bài này theo MA TRẬN 4 MỨC độ sau
+(field "level"):
+- level 1 — NHẬN BIẾT ({q1} câu): nêu định nghĩa, khái niệm, kể tên, liệt kê.
+- level 2 — THÔNG HIỂU ({q2} câu): giải thích vì sao, phân biệt, so sánh, lấy ví dụ.
+- level 3 — VẬN DỤNG ({q3} câu): áp dụng kiến thức vào một TÌNH HUỐNG CỤ THỂ (bài
+  tập, ví dụ thực tế, dữ kiện cho sẵn) để giải quyết / tính toán / phân tích.
+- level 4 — VẬN DỤNG CAO ({q4} câu): tình huống mới, gần đời sống, cần phối hợp
+  nhiều ý trong bài để lập luận, đánh giá hoặc đề xuất giải pháp có giải thích.
+Bài quá ngắn không đủ ý thì được ít hơn (tối thiểu {n_min} nếu đủ kiến thức) nhưng
+giữ tỉ lệ gần đúng và LUÔN có ít nhất 2 câu level 3-4. KHÔNG lặp ý hay hỏi vụn vặt.
 
 NGUỒN CÂU HỎI — ưu tiên theo thứ tự:
 1. Câu hỏi CÓ SẴN TRONG SÁCH: thường nằm trong các BOX/KHUNG IN MÀU (nền màu,
    viền màu) hoặc có nhãn như "Câu hỏi", "Luyện tập", "Vận dụng", "Hoạt động",
    "Thảo luận", "Em hãy...", biểu tượng dấu "?" — hoặc các câu hỏi cuối bài.
-   Giữ sát ý câu gốc, chỉ sửa cho tự đứng được (không cần nhìn hình/bảng trong sách).
-   BỎ QUA câu yêu cầu vẽ, làm thí nghiệm, quan sát hình, đi thực tế, hoặc câu mở
-   không có đáp án xác định.
-2. Nếu sách không đủ câu phù hợp: TỰ SOẠN thêm, bám sát kiến thức trong các trang
-   đính kèm (không bịa số liệu/định nghĩa ngoài tài liệu).
+   Giữ sát ý câu gốc, chỉ sửa cho tự đứng được (không cần nhìn sách).
+   Câu cần hình/bảng/số liệu trong sách: CHUYỂN THỂ — mô tả bằng lời đủ dữ kiện
+   cần thiết ngay trong câu hỏi, KHÔNG bỏ (đây thường là câu Vận dụng tốt).
+   Chỉ BỎ QUA câu bắt buộc phải vẽ, làm thí nghiệm, đi thực tế, hoặc câu hỏi ý kiến
+   cá nhân không có tiêu chí chấm.
+2. BIẾN THỂ (variant) của câu trong sách: giữ NGUYÊN kiến thức, kỹ năng và mức độ
+   của câu gốc, nhưng đổi ít nhất 1 trong các cách sau:
+   - đổi SỐ LIỆU (giá trị hợp lý với thực tế, kết quả "đẹp" vừa sức trình độ);
+   - đổi ĐỐI TƯỢNG / BỐI CẢNH / NHÂN VẬT (cùng bản chất kiến thức);
+   - HỎI NGƯỢC (cho kết quả, hỏi dữ kiện) hoặc đổi đại lượng cần tìm;
+   - đổi VÍ DỤ minh hoạ sang ví dụ khác cùng loại có trong bài.
+   Đáp án của biến thể phải TÍNH / LẬP LUẬN LẠI TỪ ĐẦU theo dữ kiện mới (không chép
+   đáp án gốc), tự kiểm tra lại phép tính trước khi ghi. Không được chỉ thay vài
+   chữ, không làm sai lệch ý nghĩa bài học, không tạo dữ kiện vô lý.
+3. Nếu vẫn chưa đủ: TỰ SOẠN thêm. Với level 3-4 ĐƯỢC tạo bối cảnh /
+   tình huống / số liệu giả định MỚI, nhưng kiến thức cần để giải PHẢI nằm trong
+   các trang đính kèm (không bịa định nghĩa, công thức, sự kiện ngoài tài liệu).
 
-DẠNG CÂU HỎI — ưu tiên:
-- ĐỊNH NGHĨA: "... là gì?", "Nêu khái niệm ..."
-- LIỆT KÊ: "Kể tên ...", "Nêu các ... "
-- GIẢI THÍCH: "Vì sao ...?", "Giải thích ...", "Phân biệt ... và ..."
-
-YÊU CẦU TỪNG FIELD (TEXT THUẦN, không markdown, bằng NGÔN NGỮ CỦA TÀI LIỆU GỐC):
-- "question": rõ ràng, 1 yêu cầu chính, trả lời được trong 1-4 câu.
-- "correct_answer": ĐÁP ÁN MẪU đầy đủ, ngắn gọn (<= 60 từ); câu liệt kê thì nêu đủ
-  các ý; nên kèm ví dụ ngắn nếu phù hợp.
-- "explanation_vi": BẰNG TIẾNG VIỆT — hướng dẫn chấm / giải thích vì sao đúng
-  (vd "chỉ cần nêu đúng 3 ý bất kỳ", "ý chính cần có là ...") (<= 40 từ).
-- "difficulty": 1 = nhớ (định nghĩa, liệt kê), 2 = hiểu (giải thích, phân biệt),
-  3 = vận dụng. Trộn các mức, phần lớn là 1-2.
+YÊU CẦU TỪNG FIELD (TEXT THUẦN, không markdown, không xuống dòng, bằng NGÔN NGỮ
+CỦA TÀI LIỆU GỐC — trừ explanation_vi):
+- "level": 1 | 2 | 3 | 4 như ma trận trên.
+- "source": "book" (câu có sẵn trong sách, chỉ sửa cho tự đứng được) | "variant"
+  (biến thể của câu trong sách) | "new" (tự soạn).
+- "question": rõ ràng, tự đủ dữ kiện. Level 1-2: 1 yêu cầu chính. Level 3-4: được
+  chia ý a), b) (tối đa 3 ý).
+- "correct_answer": ĐÁP ÁN MẪU KÈM THANG ĐIỂM THEO Ý — đây là thứ duy nhất AI chấm
+  bài nhìn thấy, nên phải đủ để chấm. Định dạng:
+  "(1) [0,5đ] <ý chấm 1>; (2) [0,5đ] <ý chấm 2>; ..."
+  Tổng điểm mỗi câu: level 1-2 = 1đ, level 3 = 2đ, level 4 = 3đ (bước 0,25đ).
+  Mỗi ý chấm là 1 ý cụ thể kiểm tra được (kết quả, lập luận, ví dụ đúng), câu
+  chia a)/b) thì ghi "a) (1) [..] ...". Độ dài: level 1-2 <= 60 từ, level 3-4
+  <= 150 từ.
+- "explanation_vi": BẰNG TIẾNG VIỆT — lưu ý khi chấm (<= 50 từ): ý nào bắt buộc,
+  chấp nhận cách diễn đạt / ví dụ / cách giải khác tương đương, lỗi thường gặp.
 - Không trùng ý giữa các câu.{subject_guide}"""
+
+# Chèn vào prompt ở chế độ SINH THÊM (--essay-more)
+EXISTING_BLOCK = """
+CÁC CÂU ĐÃ CÓ CỦA BÀI NÀY ({n} câu) — đây là lượt SINH THÊM:
+{items}
+Câu mới KHÔNG được trùng câu hỏi hay trùng dữ kiện với các câu trên. Ưu tiên:
+(a) câu trong sách CHƯA được dùng; (b) BIẾN THỂ mới của câu trong sách hoặc của
+các câu trên (đổi số liệu / bối cảnh / hỏi ngược — xem mục BIẾN THỂ); (c) tự soạn.
+"""
+
+# Hướng dẫn riêng môn được ưu tiên về DẠNG câu, nhưng không bỏ ma trận / thang điểm
+SUBJECT_KEEP_NOTE = (
+    "\n(Hướng dẫn môn chỉ điều chỉnh DẠNG câu và nội dung đáp án — vẫn GIỮ ma trận "
+    "level 1-4 và định dạng thang điểm \"(1) [..đ] ...\" trong correct_answer.)")
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"\W+", " ", text.lower()).strip()
+
+
+def _level(q: dict) -> int:
+    try:
+        return min(4, max(1, int(q.get("level", 1))))
+    except (TypeError, ValueError):
+        return 1
 
 
 def generate_essay_one(doc, row: dict, content_entry: dict, client,
-                       dpi: int = 0, subject_profile=None) -> list:
+                       dpi: int = 0, existing: list = None, round_no: int = 0,
+                       subject_profile=None) -> list:
     """Sinh câu hỏi tự luận cho MỘT topic. Trả về list
-    [{question, correct_answer, explanation_vi, difficulty}] (tối đa ESSAY_MAX).
+    [{question, correct_answer, explanation_vi, difficulty, level, source}] (tối đa
+    ESSAY_MAX). level = mức 1-4 của ma trận; difficulty = level kẹp về 1-3 cho
+    template import.
+    existing: các câu đã có (chế độ sinh thêm) -> chỉ trả về câu MỚI, bỏ câu trùng
+    nguyên văn; round_no > 0 thì gắn "round" vào từng câu mới.
     subject_profile: SubjectProfile (subjects.py) — chèn hướng dẫn riêng theo môn."""
     slug = row["topic_slug"]
+    existing = existing or []
     log(f"   [essay   ] trang {row['page_start']}-{row['page_end']} -> "
-        f"sinh {ESSAY_MIN}-{ESSAY_MAX} câu tự luận...")
+        f"sinh {'THÊM ' if existing else ''}{ESSAY_MIN}-{ESSAY_MAX} câu tự luận...")
+    existing_block = ""
+    if existing:
+        items = "\n".join(f"{i}. {q['question']}" for i, q in enumerate(existing, 1))
+        existing_block = EXISTING_BLOCK.format(n=len(existing), items=items)
+    subject_guide = guide_block(subject_profile, "essay")
+    if subject_guide:
+        subject_guide += SUBJECT_KEEP_NOTE
     sub_pdf = cut_pages(doc, row["page_start"], row["page_end"], dpi=dpi)
     prompt = ESSAY_PROMPT.format(
         level=row["level"], topic_title=row["topic_title"],
         module_title=row["module_title"],
-        content=content_markdown(content_entry or {}),
+        content=content_markdown(content_entry or {}), existing_block=existing_block,
         n_min=ESSAY_MIN, n_max=ESSAY_MAX,
-        subject_guide=guide_block(subject_profile, "essay"))
+        q1=LEVEL_QUOTA[1], q2=LEVEL_QUOTA[2], q3=LEVEL_QUOTA[3], q4=LEVEL_QUOTA[4],
+        subject_guide=subject_guide)
     res = client.generate_json(
         [client.pdf_part(sub_pdf, f"{slug}_essay.pdf"), {"text": prompt}],
         ESSAY_SCHEMA, tag="essay", temperature=0.4)
 
     out = []
+    seen = {_norm(q["question"]) for q in existing}
     for q in res.get("questions", []):
         question = str(q.get("question", "")).strip()
         answer = str(q.get("correct_answer", "")).strip()
-        if not question or not answer:
+        if not question or not answer or _norm(question) in seen:
             continue
-        try:
-            d = int(q.get("difficulty", 1))
-        except (TypeError, ValueError):
-            d = 1
-        out.append({"question": question, "correct_answer": answer,
-                    "explanation_vi": str(q.get("explanation_vi", "")).strip(),
-                    "difficulty": min(3, max(1, d))})
+        seen.add(_norm(question))
+        lv = _level(q)
+        source = q.get("source") if q.get("source") in ("book", "variant", "new") else "new"
+        item = {"question": question, "correct_answer": answer,
+                "explanation_vi": str(q.get("explanation_vi", "")).strip(),
+                "difficulty": min(3, lv), "level": lv, "source": source}
+        if round_no:
+            item["round"] = round_no
+        out.append(item)
     if len(out) > ESSAY_MAX:
         out = out[:ESSAY_MAX]
     if len(out) < ESSAY_MIN:
         warn(f"{slug}: chỉ sinh được {len(out)} câu tự luận (< {ESSAY_MIN}).")
+    counts = {lv: sum(q["level"] == lv for q in out) for lv in LEVEL_QUOTA}
+    if out and counts[3] + counts[4] < 2:
+        warn(f"{slug}: thiếu câu Vận dụng — mức 1/2/3/4 = "
+             f"{counts[1]}/{counts[2]}/{counts[3]}/{counts[4]} (cần >= 2 câu mức 3-4).")
+    no_rubric = sum(not RUBRIC_RE.search(q["correct_answer"]) for q in out)
+    if no_rubric:
+        warn(f"{slug}: {no_rubric} câu tự luận thiếu thang điểm theo ý trong đáp án.")
     return out

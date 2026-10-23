@@ -11,7 +11,7 @@ from pathlib import Path
 import fitz
 
 from stage_essay import ESSAY_MAX, generate_essay_one
-from stage_export import export
+from stage_export import export, export_essay_more
 
 ROW = {"module_slug": "unit-3-tenses", "module_title": "Unit 3 — Các thì cơ bản",
        "topic_slug": "present-perfect", "topic_title": "Thì hiện tại hoàn thành",
@@ -22,7 +22,7 @@ LO = {"objectives": ["Nêu được cấu trúc thì hiện tại hoàn thành."
 
 
 class FakeClient:
-    """Trả về 16 câu (vượt ESSAY_MAX) + 1 câu rỗng + difficulty lệch để test làm sạch."""
+    """Trả về 16 câu (vượt ESSAY_MAX) + 1 câu rỗng + level lệch để test làm sạch."""
     def __init__(self):
         self.parts = None
 
@@ -32,10 +32,10 @@ class FakeClient:
     def generate_json(self, parts, schema, tag, temperature=0.3):
         assert tag == "essay"
         self.parts = parts
-        qs = [{"question": "", "correct_answer": "x", "explanation_vi": "", "difficulty": 1}]
-        qs += [{"question": f"Câu {i}?", "correct_answer": f"Đáp án {i}",
-                "explanation_vi": "giải thích", "difficulty": d}
-               for i, d in enumerate([0, 5, "2"] + [1, 2, 3] * 4 + [1])]
+        qs = [{"question": "", "correct_answer": "x", "explanation_vi": "", "level": 1}]
+        qs += [{"question": f"Câu {i}?", "correct_answer": f"(1) [1đ] Đáp án {i}",
+                "explanation_vi": "giải thích", "level": lv}
+               for i, lv in enumerate([0, 5, "2", 4] + [1, 2, 3] * 4)]
         return {"questions": qs}
 
 
@@ -53,10 +53,36 @@ def main():
     essays = generate_essay_one(doc, ROW, LO, client)
     prompt = client.parts[-1]["text"]
     check(client.parts[0] == {"pdf": client.parts[0]["pdf"]}, "gửi kèm sub-PDF của topic")
-    check("BOX" in prompt and "ĐỊNH NGHĨA" in prompt and "LIỆT KÊ" in prompt,
-          "prompt ưu tiên box màu + định nghĩa/liệt kê/giải thích")
+    check("BOX" in prompt and "VẬN DỤNG CAO" in prompt and "THANG ĐIỂM" in prompt,
+          "prompt ưu tiên box màu + ma trận 4 mức + thang điểm theo ý")
+    check("{" not in prompt.split("NỘI DUNG BÀI HỌC")[0], "prompt đã format hết placeholder")
     check(len(essays) == ESSAY_MAX, f"cắt còn tối đa {ESSAY_MAX} câu, bỏ câu rỗng")
-    check([q["difficulty"] for q in essays[:3]] == [1, 3, 2], "difficulty kẹp 1..3")
+    check([q["level"] for q in essays[:4]] == [1, 4, 2, 4], "level kẹp 1..4")
+    check([q["difficulty"] for q in essays[:4]] == [1, 3, 2, 3],
+          "difficulty = level kẹp 1..3 (Vận dụng cao -> 3)")
+
+    # ---- sinh THÊM (--essay-more): truyền câu đã có, chỉ nhận câu mới ----
+    more_client = FakeClient()
+    existing = [dict(essays[0]), dict(essays[1])]
+    added = generate_essay_one(doc, ROW, LO, more_client, existing=existing, round_no=2)
+    more_prompt = more_client.parts[-1]["text"]
+    check("CÁC CÂU ĐÃ CÓ CỦA BÀI NÀY (2 câu)" in more_prompt
+          and essays[0]["question"] in more_prompt, "prompt sinh thêm liệt kê câu đã có")
+    check(all(q["question"] not in {e["question"] for e in existing} for q in added),
+          "bỏ câu trùng nguyên văn với câu đã có")
+    check(added and all(q.get("round") == 2 for q in added), "câu sinh thêm gắn round")
+    check("round" not in essays[0], "lượt đầu không gắn round")
+    check("BIẾN THỂ" in prompt and all(q["source"] in ("book", "variant", "new")
+                                       for q in essays), "prompt có biến thể + field source")
+
+    with tempfile.TemporaryDirectory() as td:
+        out_more = Path(td) / "essay-more-02"
+        n_more = export_essay_more([ROW], {"present-perfect": essays + added}, out_more, 2)
+        with open(out_more / "essay.csv", encoding="utf-8-sig", newline="") as f:
+            more_rows = list(csv.DictReader(f))
+        check(n_more == len(added) == len(more_rows)
+              and {r["question"] for r in more_rows} == {q["question"] for q in added},
+              "essay-more-NN/essay.csv chỉ chứa câu của lượt đó")
 
     with tempfile.TemporaryDirectory() as td:
         out = Path(td)

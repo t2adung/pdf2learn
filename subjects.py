@@ -68,9 +68,10 @@ PROFILES = {p.key: p for p in [
             "\"Giải bài toán...\", \"So sánh...\", bài toán có lời văn — ưu tiên lấy từ "
             "mục Luyện tập / Vận dụng / Bài tập của sách. Chỉ 1-2 câu hỏi lý thuyết "
             "(phát biểu quy tắc, công thức).\n"
-            "- correct_answer: LỜI GIẢI TỪNG BƯỚC + đáp số cuối (được phép <= 100 từ).\n"
-            "- explanation_vi: hướng dẫn chấm theo bước (vd \"đúng bước quy đồng: 0,5đ; "
-            "đúng kết quả: 0,5đ\").\n"
+            "- correct_answer: LỜI GIẢI TỪNG BƯỚC + đáp số cuối, MỖI BƯỚC là 1 ý chấm có "
+            "điểm (vd \"(1) [0,5đ] quy đồng: ...; (2) [0,5đ] kết quả: ...\").\n"
+            "- explanation_vi: lưu ý chấm (chấp nhận cách giải khác đúng, sai bước nào "
+            "thì trừ phần sau).\n"
             "- BỎ QUA bài cần đọc số liệu từ hình vẽ mà không diễn đạt lại được bằng lời."),
         validate="- Với câu tính toán: TỰ TÍNH LẠI từng bước rồi mới chọn đáp án.",
     ),

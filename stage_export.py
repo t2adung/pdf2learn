@@ -66,6 +66,32 @@ def build_import_payload(structure: list, topic_contents: dict, essays: dict,
     return {"teacher_id": teacher_id, "topics": topics, "exercises": exercises}
 
 
+def _write_essay_csv(path, exercises: list):
+    """essay.csv — cùng định dạng multichoice.csv (UTF-8 BOM), 1 dòng / câu."""
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=ESSAY_COLS, quoting=csv.QUOTE_MINIMAL)
+        w.writeheader()
+        for ex in exercises:
+            w.writerow({"topic_slug": ex["topic_slug"], "question": ex["question"],
+                        "answer": ex["correct_answer"],
+                        "explanation_vi": ex["explanation_vi"],
+                        "difficulty": ex["difficulty"]})
+
+
+def export_essay_more(structure: list, essays: dict, out_dir, round_no: int) -> int:
+    """Delta của lượt sinh thêm (--essay-more): CHỈ các câu tự luận có round ==
+    round_no -> out_dir/essay.csv, để import thêm vào DB mà không nhân đôi câu cũ.
+    Trả về số câu đã ghi."""
+    new_only = {s: [q for q in qs if q.get("round") == round_no]
+                for s, qs in essays.items()}
+    exercises = build_import_payload(structure, {}, new_only)["exercises"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _write_essay_csv(out_dir / ESSAY_CSV_FILE, exercises)
+    log(f"\n📦 Câu tự luận SINH THÊM (lượt {round_no:02d}): {out_dir}")
+    log(f"   {ESSAY_CSV_FILE:<17}: {len(exercises)} câu MỚI (chỉ import file này để thêm)")
+    return len(exercises)
+
+
 def _compose_content(row: dict, entry: dict, images: list, questions: list,
                      content_format: str = "markdown",
                      subject: str = "", grade: str = "", density: str = "full") -> str:
@@ -176,15 +202,7 @@ def export(structure: list, content: dict, images: dict, questions: dict,
                 problems.append(f"{row['topic_slug']}: chưa có câu hỏi tự luận")
         (out_dir / IMPORT_PAYLOAD_FILE).write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        # essay.csv — cùng định dạng multichoice.csv (UTF-8 BOM), 1 dòng / câu
-        with open(out_dir / ESSAY_CSV_FILE, "w", encoding="utf-8-sig", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=ESSAY_COLS, quoting=csv.QUOTE_MINIMAL)
-            w.writeheader()
-            for ex in payload["exercises"]:
-                w.writerow({"topic_slug": ex["topic_slug"], "question": ex["question"],
-                            "answer": ex["correct_answer"],
-                            "explanation_vi": ex["explanation_vi"],
-                            "difficulty": ex["difficulty"]})
+        _write_essay_csv(out_dir / ESSAY_CSV_FILE, payload["exercises"])
 
     # ---- manifest.json ----
     manifest = {

@@ -23,6 +23,7 @@ Dùng:
   python main.py sach.pdf --redo-from 5      # xoá cache stage 5+, sinh lại câu hỏi
   python main.py sach.pdf --no-images --no-validate   # nhanh, ít request
   python main.py sach.pdf --essay-only       # khoá đã gen: CHỈ sinh thêm câu tự luận
+  python main.py sach.pdf --essay-more       # SINH THÊM 1 lượt câu tự luận (giữ câu cũ)
 """
 import argparse
 import os
@@ -114,6 +115,12 @@ def main():
     ap.add_argument("--redo-essay", action="store_true",
                     help="xoá cache câu tự luận (work/05_essay.json) rồi sinh lại — "
                          "giữ nguyên content/ảnh/MCQ")
+    ap.add_argument("--essay-more", action="store_true",
+                    help="SINH THÊM (không sinh lại) câu tự luận cho khoá đã gen: mỗi lần "
+                         "chạy = 1 lượt, mỗi bài thêm 10-12 câu MỚI (ưu tiên câu sách chưa "
+                         "dùng, rồi biến thể đổi số/bối cảnh), giữ nguyên câu cũ. Ghi "
+                         "output/essay-more-NN/essay.csv chỉ chứa câu mới + snapshot đầy đủ. "
+                         "Bị dừng giữa chừng: chạy lại đúng lệnh để làm tiếp lượt dở")
     ap.add_argument("--teacher-id", default="00000000-0000-0000-0000-000000000000",
                     help="giá trị teacher_id trong import-payload.json")
     ap.add_argument("--no-validate", action="store_true",
@@ -131,7 +138,11 @@ def main():
     args = ap.parse_args()
     if args.essay_only and args.no_essay:
         sys.exit("--essay-only và --no-essay mâu thuẫn nhau — chỉ dùng 1 trong 2.")
+    if args.essay_more and (args.no_essay or args.redo_essay):
+        sys.exit("--essay-more (sinh thêm) không dùng chung với --no-essay / --redo-essay.")
     essay_on = not args.no_essay
+    # --essay-more cũng chỉ đụng câu tự luận của khoá đã gen, như --essay-only
+    essay_only = args.essay_only or args.essay_more
 
     # Đọc biến môi trường từ file .env nếu có (tiện chạy local, không phải export mỗi lần).
     # Không bắt buộc cài python-dotenv: nếu thiếu thì bỏ qua, vẫn dùng export/Secrets như cũ.
@@ -176,17 +187,18 @@ def main():
               5: work / "05_questions.json", 6: work / "06_review.json"}
     f_export_state = work / "07_export_state.json"
     f_essay = work / "05_essay.json"     # stage 5b: câu hỏi tự luận
+    f_essay_more = work / "05_essay_more.json"   # trạng thái lượt --essay-more
 
-    # ---- --essay-only: chỉ áp dụng cho khoá ĐÃ GEN (có sẵn cache) ----
-    if args.essay_only:
+    # ---- --essay-only / --essay-more: chỉ áp dụng cho khoá ĐÃ GEN (có sẵn cache) ----
+    if essay_only:
         if args.redo_from <= 5 or args.redo_content:
-            sys.exit("--essay-only không dùng chung với --redo-from <=5 / "
+            sys.exit("--essay-only/--essay-more không dùng chung với --redo-from <=5 / "
                      "--redo-content (sẽ xoá content/câu hỏi đã gen). "
                      "Muốn sinh lại câu tự luận: --essay-only --redo-essay")
         missing = [f.name for f in (caches[2], caches[3], caches[5])
                    if not f.exists()]
         if missing and not args.toc_file:
-            sys.exit(f"--essay-only cần khoá đã gen trong {work} nhưng thiếu: "
+            sys.exit(f"--essay-only/--essay-more cần khoá đã gen trong {work} nhưng thiếu: "
                      f"{', '.join(missing)}. Chạy pipeline đầy đủ trước "
                      "(mặc định đã gồm bước sinh câu tự luận).")
 
@@ -197,6 +209,7 @@ def main():
             log(f"♻️  Xoá cache stage {n}: {f.name}")
     if (args.redo_from <= 5 or args.redo_essay) and f_essay.exists():
         f_essay.unlink()
+        f_essay_more.unlink(missing_ok=True)
         log(f"♻️  Xoá cache câu tự luận: {f_essay.name}")
     if args.redo_from <= 4 and images_dir.exists():
         shutil.rmtree(images_dir)
@@ -343,6 +356,17 @@ def main():
     if args.essay_only:
         log("── --essay-only: CHỈ sinh câu hỏi tự luận cho topic đã gen "
             "(không đụng content/ảnh/MCQ/review) ──")
+    more = None
+    if args.essay_more:
+        # Lượt trước còn topic dở -> làm tiếp lượt đó; xong hết -> mở lượt mới.
+        eligible = {r["topic_slug"] for r in structure
+                    if r["topic_slug"] in content and r["topic_slug"] in questions}
+        more = load_json(f_essay_more, None) or {"round": 0, "done": []}
+        if more["round"] == 0 or eligible <= set(more["done"]):
+            more = {"round": more["round"] + 1, "done": []}
+            save_json(f_essay_more, more)
+        log(f"── --essay-more: SINH THÊM câu tự luận — lượt {more['round']:02d} "
+            "(giữ câu cũ, không đụng content/ảnh/MCQ/review) ──")
 
     reviewer, with_pdf_flag = (None, False)
     if args.review:
@@ -355,11 +379,16 @@ def main():
     total = len(structure)
     for idx, row in enumerate(structure, 1):
         slug = row["topic_slug"]
-        if args.essay_only:
+        if essay_only:
             if slug not in content or slug not in questions:
                 log(f"── Topic {idx}/{total}: {slug} — chưa gen content/MCQ, bỏ qua ──")
                 continue
-            if slug in essays:
+            if more is not None:
+                if slug in more["done"]:
+                    log(f"── Topic {idx}/{total}: {slug} ✓ (đã sinh thêm lượt "
+                        f"{more['round']:02d}, bỏ qua) ──")
+                    continue
+            elif slug in essays:
                 log(f"── Topic {idx}/{total}: {slug} ✓ (đã có câu tự luận, bỏ qua) ──")
                 continue
         steps_done = (slug in content
@@ -367,11 +396,23 @@ def main():
                       and slug in questions
                       and (not args.review or slug in review)
                       and (not essay_on or slug in essays))
-        if steps_done and not args.essay_only:
+        if steps_done and not essay_only:
             log(f"── Topic {idx}/{total}: {slug} ✓ (hoàn chỉnh, bỏ qua) ──")
             continue
         log(f"── Topic {idx}/{total}: {slug} — {row['topic_title']} ──")
         try:
+            if more is not None:
+                old = essays.get(slug, [])
+                added = generate_essay_one(doc, row, content[slug], client,
+                                           dpi=args.dpi, existing=old,
+                                           round_no=more["round"],
+                                           subject_profile=profile)
+                essays[slug] = old + added
+                save_json(f_essay, essays)
+                more["done"].append(slug)
+                save_json(f_essay_more, more)
+                log(f"   +{len(added)} câu tự luận (tổng {len(essays[slug])})")
+                continue
             if args.essay_only:
                 essays[slug] = generate_essay_one(doc, row, content[slug], client,
                                                   dpi=args.dpi, subject_profile=profile)
@@ -425,7 +466,7 @@ def main():
 
     # topic "hoàn chỉnh" = đủ mọi bước theo cờ đang bật
     # (--essay-only: khoá đã gen -> chỉ cần content + MCQ + câu tự luận)
-    if args.essay_only:
+    if essay_only:
         completed = [r["topic_slug"] for r in structure
                      if r["topic_slug"] in content
                      and r["topic_slug"] in questions
@@ -442,7 +483,7 @@ def main():
     state = load_json(f_export_state, {"exported": {}, "next_batch": 1})
     # --essay-only không tạo batch delta: các topic đã export ở batch cũ; bản
     # đầy đủ (kèm import-payload.json) nằm ở snapshot gốc output/.
-    new_slugs = ([] if args.essay_only
+    new_slugs = ([] if essay_only
                  else [s for s in completed if s not in state["exported"]])
 
     if new_slugs:
@@ -478,6 +519,11 @@ def main():
             warn(w)
     else:
         log("\n🔍 Quality checks: không phát hiện vấn đề.")
+
+    if more is not None:
+        from stage_export import export_essay_more
+        export_essay_more(structure, essays, out_dir / f"essay-more-{more['round']:02d}",
+                          more["round"])
 
     # snapshot tích luỹ đầy đủ ở gốc (dùng cho lần import chính thức cuối cùng)
     export(structure, content, images, questions, out_dir,
