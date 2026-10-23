@@ -10,6 +10,7 @@ KHÔNG nhìn đáp án; câu nào giải ra khác correct_answer => loại (nghi
 import json
 
 from render_markdown import content_markdown
+from subjects import guide_block
 from utils import log, warn
 
 QUESTIONS_SCHEMA = {
@@ -51,7 +52,7 @@ Nhiệm vụ: sinh câu hỏi trắc nghiệm 4 phương án A/B/C/D sao cho:
    với đáp án đúng, KHÔNG vô lý lộ liễu, không dùng "Tất cả các ý trên".
 4. Vị trí đáp án đúng phân bố đều giữa A, B, C, D (không dồn vào 1 chữ cái).
 5. explanation_vi: giải thích NGẮN GỌN bằng TIẾNG VIỆT vì sao đáp án đúng.
-6. difficulty: 1 = nhớ (nhận biết), 2 = hiểu, 3 = vận dụng. Trộn cả 3 mức."""
+6. difficulty: 1 = nhớ (nhận biết), 2 = hiểu, 3 = vận dụng. Trộn cả 3 mức.{subject_guide}"""
 
 VALIDATE_SCHEMA = {
     "type": "object",
@@ -76,7 +77,7 @@ NỘI DUNG BÀI HỌC:
 {content}
 
 CÁC CÂU HỎI:
-{questions}"""
+{questions}{subject_guide}"""
 
 
 def _fmt_questions_for_validation(questions: list) -> str:
@@ -89,8 +90,9 @@ def _fmt_questions_for_validation(questions: list) -> str:
 
 
 def generate_questions_one(row: dict, content_entry: dict, client,
-                           validate: bool = True):
-    """Sinh câu hỏi cho MỘT topic. Trả về (questions, dropped_hoặc_None)."""
+                           validate: bool = True, subject_profile=None):
+    """Sinh câu hỏi cho MỘT topic. Trả về (questions, dropped_hoặc_None).
+    subject_profile: SubjectProfile (subjects.py) — chèn hướng dẫn riêng theo môn."""
     slug = row["topic_slug"]
     kps = content_entry.get("key_points", [])
     log(f"   [question] {len(kps)} key points -> sinh câu hỏi...")
@@ -98,7 +100,8 @@ def generate_questions_one(row: dict, content_entry: dict, client,
     prompt = QUESTIONS_PROMPT.format(
         level=row["level"], topic_title=row["topic_title"],
         content=content_md,
-        key_points="\n".join(f"- {k}" for k in kps))
+        key_points="\n".join(f"- {k}" for k in kps),
+        subject_guide=guide_block(subject_profile, "mcq"))
     res = client.generate_json([{"text": prompt}], QUESTIONS_SCHEMA,
                                tag="questions", temperature=0.5)
     questions = res.get("questions", [])
@@ -110,7 +113,8 @@ def generate_questions_one(row: dict, content_entry: dict, client,
         log(f"   [validate] giải lại {len(questions)} câu để kiểm tra đáp án...")
         vp = VALIDATE_PROMPT.format(
             content=content_md,
-            questions=_fmt_questions_for_validation(questions))
+            questions=_fmt_questions_for_validation(questions),
+            subject_guide=guide_block(subject_profile, "validate"))
         try:
             vres = client.generate_json([{"text": vp}], VALIDATE_SCHEMA,
                                         tag="validate", temperature=0.1)
