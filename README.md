@@ -422,6 +422,7 @@ cửa sổ hạn mức reset, chạy lại **đúng lệnh cũ** — topic đã 
 |---|---|---|
 | *(mặc định)* | bật | sau MCQ, mỗi bài sinh **10–12 câu tự luận**: AI đọc lại đúng các trang của bài, ưu tiên câu hỏi trong **box/khung in màu** & câu hỏi có sẵn trong sách (Câu hỏi, Luyện tập, Vận dụng…), thiếu thì tự soạn (câu cần hình/bảng được chuyển thể sang lời). Độ khó theo **ma trận đề kiểm tra trên lớp / học kỳ 4 mức** — 12 câu = 4 Nhận biết / 4 Thông hiểu / 3 Vận dụng / 1 Vận dụng cao (tình huống mới, được chia ý a/b). Đáp án mẫu kèm **thang điểm theo ý** ngay trong `correct_answer`/`answer` (`(1) [0,5đ] ...; (2) [0,5đ] ...`; tổng 1đ mức 1–2, 2đ mức 3, 3đ mức 4) để AI chấm bài đọc được. `difficulty` giữ 1–3 theo template import (Vận dụng cao ghi 3; mức gốc 1–4 lưu ở `level` trong `work/05_essay.json`). Kết quả ghi `output/essay.csv` (import DB như `multichoice.csv`) + `output/import-payload.json` |
 | `--essay-only` | tắt | cho **khoá đã gen**: CHỈ sinh câu tự luận cho các topic đã có content + MCQ trong cache, **không** sinh/sửa content, ảnh, MCQ, review; rồi export lại snapshot (kèm `import-payload.json`). Không tạo batch mới |
+| `--essay-more` | tắt | **SINH THÊM** (không sinh lại) cho khoá đã gen: mỗi lần chạy = 1 lượt, mỗi bài thêm 10–12 câu **mới** theo cùng ma trận 4 mức, giữ nguyên câu cũ → tổng số câu tăng dần. AI được xem danh sách câu đã có để không trùng; ưu tiên câu sách chưa dùng, rồi **biến thể** (đổi số liệu, đổi bối cảnh/đối tượng, hỏi ngược) giữ nguyên kiến thức + mức độ, đáp án tính lại từ đầu. Ghi `output/essay-more-NN/essay.csv` **chỉ chứa câu của lượt NN** (import file này để thêm vào DB, không nhân đôi câu cũ) + snapshot `output/essay.csv` đầy đủ. Bị dừng giữa lượt → chạy lại đúng lệnh để làm tiếp lượt dở. Không dùng chung với `--no-essay`/`--redo-essay` |
 | `--teacher-id ID` | `00000000-…-000000000000` | giá trị `teacher_id` trong `import-payload.json` |
 
 ```bash
@@ -432,6 +433,8 @@ python3 main.py sach.pdf --level "Lớp 6"
 python3 main.py sach.pdf --level "Lớp 6" --essay-only --teacher-id <uuid>
 # Chưa ưng câu tự luận -> sinh lại riêng phần này:
 python3 main.py sach.pdf --level "Lớp 6" --essay-only --redo-essay
+# Muốn THÊM câu (giữ câu cũ) -> mỗi lần chạy thêm 1 lượt 10-12 câu/bài:
+python3 main.py sach.pdf --level "Lớp 6" --essay-more
 ```
 
 > Chạy lại lệnh thường (không `--essay-only`) trên khoá cũ cũng chỉ sinh thêm câu

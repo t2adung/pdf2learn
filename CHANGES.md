@@ -1,5 +1,17 @@
 # pdf2learn v2 — Content chuyển từ Markdown blob sang Learning Object JSON
 
+## `--essay-more` — sinh THÊM câu tự luận + biến thể từ câu trong sách
+
+- Cờ mới `--essay-more` (khoá đã gen): mỗi lần chạy = 1 lượt, mỗi bài thêm 10-12 câu
+  MỚI, giữ câu cũ. Prompt nhận danh sách câu đã có để tránh trùng; code bỏ thêm câu
+  trùng nguyên văn. Câu mới gắn `round` trong `work/05_essay.json`; trạng thái lượt ở
+  `work/05_essay_more.json` (dừng giữa lượt -> chạy lại để làm tiếp).
+- Export delta `output/essay-more-NN/essay.csv` chỉ chứa câu của lượt NN (import thêm
+  không nhân đôi câu cũ); snapshot `output/essay.csv` vẫn đầy đủ.
+- Prompt thêm nguồn **BIẾN THỂ** (giữa "câu có sẵn trong sách" và "tự soạn"): giữ
+  nguyên kiến thức + mức độ, đổi số liệu / bối cảnh / đối tượng / hỏi ngược; đáp án
+  phải tính lại từ đầu. Field `source` (book | variant | new) lưu trong cache để soát.
+
 ## Câu tự luận sát đề kiểm tra trên lớp / học kỳ + thang điểm theo ý
 
 - Prompt `stage_essay.py` trước đây chỉ ra câu dễ (định nghĩa/liệt kê, đáp án <= 60

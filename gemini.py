@@ -295,8 +295,13 @@ class MockGemini(Gemini):
                     "a) (1) [1đ] ...; (2) [0,5đ] ...; b) (3) [1,5đ] đề xuất ... có giải thích (mock).",
                     "Đề xuất hợp lý, có lập luận dựa trên X là đạt."),
             }
+            # lượt sinh thêm (--essay-more): đánh dấu theo số câu đã có để không trùng
+            m = re.search(r"CÁC CÂU ĐÃ CÓ CỦA BÀI NÀY \((\d+) câu\)",
+                          " ".join(p.get("text", "") for p in parts))
+            tag_more = f" +{m.group(1)}" if m else ""
             return {"questions": [
-                {"level": lv, "question": f"{samples[lv][0]} [{i}]",
+                {"level": lv, "source": "variant" if lv == 3 else "book",
+                 "question": f"{samples[lv][0]} [{i}{tag_more}]",
                  "correct_answer": samples[lv][1], "explanation_vi": samples[lv][2]}
                 for lv, n in ((1, 4), (2, 4), (3, 3), (4, 1)) for i in range(1, n + 1)]}
         if tag == "review":
