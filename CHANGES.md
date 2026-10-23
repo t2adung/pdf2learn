@@ -21,6 +21,11 @@
   code (không phụ thuộc thư mục đang đứng), có parser dự phòng khi chưa cài
   python-dotenv (trước đây thiếu thư viện là lặng lẽ bỏ qua `.env`), và `.env` thắng
   shell riêng với `CLAUDE_CONFIG_DIR`.
+- `--essay-more` chống trùng chặt hơn: trước đây chỉ bỏ câu trùng NGUYÊN VĂN. Nay so
+  theo tập từ nội dung (bỏ từ lệnh / hư từ, coi "X là gì?" = "Nêu khái niệm X") +
+  số liệu: cùng số liệu và Jaccard >= 0.85 -> trùng, bị loại (có log); khác số liệu
+  -> biến thể, giữ. Áp dụng cả với câu trùng nhau trong cùng lượt. Prompt sinh thêm
+  nói rõ diễn đạt lại cùng ý là trùng và yêu cầu tự soát trước khi trả về.
 - `env.example` liệt kê đủ biến repo dùng: `GEMINI_API_KEY`, `GROQ_API_KEY`,
   `OPENROUTER_API_KEY`, `CLAUDE_CONFIG_DIR`, và các biến KHÔNG dùng cho backend claude.
 
