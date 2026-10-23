@@ -10,7 +10,19 @@
 - Sửa lỗi: `toc_from_images.py --backend claude` trước đây KHÔNG đọc `.env` (chỉ nhánh
   gemini đọc) -> `CLAUDE_CONFIG_DIR` trong `.env` bị bỏ qua, OCR mục lục chạy bằng tài
   khoản `~/.claude`. Nay đọc `.env` cho mọi backend.
-- `env.example`: thêm `CLAUDE_CONFIG_DIR` (tài khoản Claude riêng cho pdf2learn).
+- **Bắt buộc `CLAUDE_CONFIG_DIR`** với `--backend claude` (dừng nếu thiếu / thư mục chưa
+  có / `claude auth status` báo thư mục khác). Chấp nhận `~/...`, tự đổi sang đường dẫn
+  tuyệt đối trước khi truyền cho `claude`.
+- Mọi tiến trình `claude` (cả `auth status` lẫn `claude -p`) chạy với môi trường đã bỏ
+  `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`,
+  `ANTHROPIC_PROFILE`, `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_BASE_URL`,
+  `CLAUDE_CODE_USE_BEDROCK/VERTEX/FOUNDRY` (các biến ghi đè đăng nhập subscription).
+- `utils.load_env()` thay cho các khối `load_dotenv()` rải rác: luôn đọc `.env` cạnh
+  code (không phụ thuộc thư mục đang đứng), có parser dự phòng khi chưa cài
+  python-dotenv (trước đây thiếu thư viện là lặng lẽ bỏ qua `.env`), và `.env` thắng
+  shell riêng với `CLAUDE_CONFIG_DIR`.
+- `env.example` liệt kê đủ biến repo dùng: `GEMINI_API_KEY`, `GROQ_API_KEY`,
+  `OPENROUTER_API_KEY`, `CLAUDE_CONFIG_DIR`, và các biến KHÔNG dùng cho backend claude.
 
 ## `--essay-more` — sinh THÊM câu tự luận + biến thể từ câu trong sách
 

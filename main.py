@@ -32,7 +32,7 @@ import sys
 from pathlib import Path
 
 from subjects import PROFILE_KEYS, detect_subject
-from utils import load_json, log, save_json, warn
+from utils import load_env, load_json, log, save_json, warn
 
 # Phiên bản shape của 03_content.json. v2 = Learning Object JSON
 # (objectives/sections/mindmap/...) thay cho blob content_markdown (v1).
@@ -144,13 +144,8 @@ def main():
     # --essay-more cũng chỉ đụng câu tự luận của khoá đã gen, như --essay-only
     essay_only = args.essay_only or args.essay_more
 
-    # Đọc biến môi trường từ file .env nếu có (tiện chạy local, không phải export mỗi lần).
-    # Không bắt buộc cài python-dotenv: nếu thiếu thì bỏ qua, vẫn dùng export/Secrets như cũ.
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
+    # Đọc .env của repo (GEMINI_API_KEY, CLAUDE_CONFIG_DIR...) — xem utils.load_env.
+    load_env()
 
     if not args.pdf.exists():
         sys.exit(f"Không tìm thấy file: {args.pdf}")

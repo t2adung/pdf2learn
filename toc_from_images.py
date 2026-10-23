@@ -52,7 +52,7 @@ from pathlib import Path
 import fitz
 
 from build_toc import build, parse_toc_text
-from utils import log, save_json, warn
+from utils import load_env, log, save_json, warn
 
 IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 PDF_EXT = ".pdf"
@@ -203,11 +203,7 @@ def main():
 
     # .env cho MỌI backend: GEMINI_API_KEY, và CLAUDE_CONFIG_DIR (tài khoản Claude
     # riêng cho pdf2learn) — phải nạp TRƯỚC khi gọi `claude`.
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
+    load_env()
 
     # ---- client (giống main.py: gemini REST / claude subscription / mock) ----
     if args.dry_run:
