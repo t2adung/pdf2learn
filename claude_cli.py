@@ -72,6 +72,42 @@ class ClaudeCLI:
             warn("Không tìm thấy lệnh `claude` trong PATH. Cài Claude Code và "
                  "`claude login` (Max/Pro) trước khi dùng --backend claude.")
 
+    # ---------- tài khoản đang dùng ----------
+    def check_account(self) -> dict:
+        """Gọi `claude auth status` (JSON) để in RÕ tài khoản + thư mục cấu hình mà
+        mọi lời gọi `claude -p` sau đó sẽ dùng (CLAUDE_CONFIG_DIR, đọc cả từ .env).
+        Dừng (ClaudeError) nếu chưa đăng nhập hoặc đang dùng API key — backend này
+        dành cho SUBSCRIPTION, API key sẽ bị tính tiền theo token.
+        CLI quá cũ / lỗi khác: chỉ cảnh báo rồi chạy tiếp."""
+        cfg_env = os.environ.get("CLAUDE_CONFIG_DIR", "")
+        log(f"   CLAUDE_CONFIG_DIR = {cfg_env or '(trống -> ~/.claude mặc định)'}")
+        try:
+            proc = subprocess.run(["claude", "auth", "status"], capture_output=True,
+                                  text=True, timeout=60)
+            info = json.loads((proc.stdout or "").strip() or "{}")
+        except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as e:
+            warn(f"Không đọc được `claude auth status` ({type(e).__name__}) — không xác "
+                 "nhận được tài khoản. Kiểm tra tay: claude rồi gõ /status.")
+            return {}
+        if not isinstance(info, dict):
+            info = {}
+        # in mọi trường đơn giản (email, tổ chức, kiểu đăng nhập, thư mục cấu hình...)
+        shown = ", ".join(f"{k}={v}" for k, v in info.items()
+                          if isinstance(v, (str, int, float, bool)) and v != "")
+        log(f"   Tài khoản Claude: {shown or '(không có thông tin)'}")
+        method = str(info.get("authMethod", ""))
+        if method in ("api_key", "api_key_helper"):
+            raise ClaudeError(
+                f"`claude` đang dùng {method} (TÍNH TIỀN THEO TOKEN), không phải "
+                "subscription. Bỏ ANTHROPIC_API_KEY / apiKeyHelper (cả trong .env) rồi "
+                "chạy lại; kiểm tra bằng `claude auth status`.")
+        if method == "none" or (proc.returncode != 0 and not method):
+            raise ClaudeError(
+                "`claude` chưa đăng nhập cho thư mục cấu hình này. Chạy "
+                f"{'CLAUDE_CONFIG_DIR=' + cfg_env + ' ' if cfg_env else ''}claude rồi "
+                "/login bằng tài khoản Pro/Max.")
+        return info
+
     # ---------- usage ----------
     def _record(self, tag: str, tok_in: int, tok_out: int):
         u = self.usage.setdefault(tag, {"calls": 0, "in": 0, "out": 0})

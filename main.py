@@ -161,12 +161,16 @@ def main():
         client = MockGemini()
         log("🧪 DRY-RUN: dùng MockGemini (không gọi API thật).")
     elif args.backend == "claude":
-        from claude_cli import CLAUDE_DEFAULT_MODEL, ClaudeCLI
+        from claude_cli import CLAUDE_DEFAULT_MODEL, ClaudeCLI, ClaudeError
         # --model mặc định là của Gemini -> chuyển sang model Claude mặc định.
         model = CLAUDE_DEFAULT_MODEL if args.model.startswith("gemini") else args.model
         client = ClaudeCLI(model=model, interval=args.interval)
         log(f"🟣 Backend CLAUDE (subscription qua `claude -p`, model={model}). "
             "Không cần API key.")
+        try:
+            client.check_account()
+        except ClaudeError as e:
+            sys.exit(str(e))
     else:
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         if not api_key:

@@ -300,6 +300,16 @@ claude login          # đăng nhập gói Max/Pro
 claude -p "xin chào"  # thử: trả lời được là OK
 ```
 
+Khi khởi động, tool chạy `claude auth status` và **in tài khoản + thư mục cấu hình**
+sẽ dùng (`CLAUDE_CONFIG_DIR`, email, `authMethod`...). Tool **dừng** nếu chưa đăng nhập
+hoặc nếu `claude` đang dùng API key (`authMethod=api_key` — sẽ bị tính tiền theo token).
+
+Dùng **tài khoản Claude riêng** cho pdf2learn (không đụng `~/.claude` của tài khoản
+chính / extension VS Code): đăng nhập 1 lần bằng
+`CLAUDE_CONFIG_DIR=$HOME/.claude-pdf2learn claude` → `/login`, rồi thêm vào `.env` của
+repo dòng `CLAUDE_CONFIG_DIR=/đường/dẫn/đầy/đủ/.claude-pdf2learn` (xem `env.example`).
+`main.py`, `toc_from_images.py`, `batch_toc.py` đều đọc `.env` trước khi gọi `claude`.
+
 Nếu `claude` không có trong PATH, tool cảnh báo ngay khi khởi động. **Không cần**
 `GEMINI_API_KEY` (và không cần key reviewer Groq/OpenRouter).
 

@@ -1,5 +1,17 @@
 # pdf2learn v2 — Content chuyển từ Markdown blob sang Learning Object JSON
 
+## Backend claude: in rõ tài khoản đang dùng + sửa `.env` cho `toc_from_images.py`
+
+- `ClaudeCLI.check_account()`: khi khởi động (`main.py`, `toc_from_images.py`,
+  `batch_toc.py` với `--backend claude`) chạy `claude auth status`, in
+  `CLAUDE_CONFIG_DIR` + các trường tài khoản (email, `authMethod`, `configDirectory`...).
+  Dừng nếu chưa đăng nhập hoặc đang dùng API key / apiKeyHelper (tính tiền theo token).
+  CLI cũ không có `auth status` -> chỉ cảnh báo.
+- Sửa lỗi: `toc_from_images.py --backend claude` trước đây KHÔNG đọc `.env` (chỉ nhánh
+  gemini đọc) -> `CLAUDE_CONFIG_DIR` trong `.env` bị bỏ qua, OCR mục lục chạy bằng tài
+  khoản `~/.claude`. Nay đọc `.env` cho mọi backend.
+- `env.example`: thêm `CLAUDE_CONFIG_DIR` (tài khoản Claude riêng cho pdf2learn).
+
 ## `--essay-more` — sinh THÊM câu tự luận + biến thể từ câu trong sách
 
 - Cờ mới `--essay-more` (khoá đã gen): mỗi lần chạy = 1 lượt, mỗi bài thêm 10-12 câu

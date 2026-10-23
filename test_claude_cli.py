@@ -123,6 +123,37 @@ patch_run(run_repair)
 check("JSON hỏng -> sửa 1 lần rồi parse được",
       ClaudeCLI().generate_json([{"text": "x"}], {}, "content") == {"fixed": 1})
 
+
+# --- 6. check_account: in tài khoản, chặn API key / chưa đăng nhập ---
+def auth_run(payload, rc=0):
+    def run(cmd, input=None, **kw):
+        assert cmd[:3] == ["claude", "auth", "status"], cmd
+        return fake_proc(stdout=json.dumps(payload), rc=rc)
+    return run
+
+
+patch_run(auth_run({"loggedIn": True, "authMethod": "claude.ai",
+                    "email": "phu@example.com", "configDirectory": "/u/.claude-pdf2learn"}))
+info = ClaudeCLI().check_account()
+check("check_account trả về thông tin subscription", info.get("email") == "phu@example.com")
+
+for method, rc in (("api_key", 0), ("api_key_helper", 0), ("none", 1)):
+    patch_run(auth_run({"authMethod": method}, rc=rc))
+    try:
+        ClaudeCLI().check_account()
+        check(f"check_account chặn authMethod={method}", False, "không raise")
+    except ClaudeError:
+        check(f"check_account chặn authMethod={method}", True)
+
+
+def run_old_cli(cmd, input=None, **kw):
+    return fake_proc(stdout="Unknown command: auth", rc=1)
+
+
+patch_run(run_old_cli)
+check("CLI cũ không có `auth status` -> chỉ cảnh báo, không dừng",
+      ClaudeCLI().check_account() == {})
+
 print()
 if fails:
     print(f"❌ {len(fails)} check thất bại: {fails}")

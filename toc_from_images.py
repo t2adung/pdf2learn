@@ -201,24 +201,31 @@ def main():
     if args.json_out and (args.offset is None or args.last_page is None):
         sys.exit("--json-out cần cả --offset và --last-page (xem docstring build_toc.py).")
 
+    # .env cho MỌI backend: GEMINI_API_KEY, và CLAUDE_CONFIG_DIR (tài khoản Claude
+    # riêng cho pdf2learn) — phải nạp TRƯỚC khi gọi `claude`.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
     # ---- client (giống main.py: gemini REST / claude subscription / mock) ----
     if args.dry_run:
         from gemini import MockGemini
         client = MockGemini()
         log("🧪 DRY-RUN: dùng MockGemini.")
     elif args.backend == "claude":
-        from claude_cli import CLAUDE_DEFAULT_MODEL, ClaudeCLI
+        from claude_cli import CLAUDE_DEFAULT_MODEL, ClaudeCLI, ClaudeError
         # --model mặc định là của Gemini -> chuyển sang model Claude mặc định.
         model = CLAUDE_DEFAULT_MODEL if args.model.startswith("gemini") else args.model
         client = ClaudeCLI(model=model, interval=args.interval)
         log(f"🟣 Backend CLAUDE (subscription qua `claude -p`, model={model}). "
             "Không cần API key.")
-    else:
         try:
-            from dotenv import load_dotenv
-            load_dotenv()
-        except ImportError:
-            pass
+            client.check_account()
+        except ClaudeError as e:
+            sys.exit(str(e))
+    else:
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         if not api_key:
             sys.exit("Thiếu GEMINI_API_KEY (hoặc chạy --dry-run để test, "
