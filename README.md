@@ -300,6 +300,25 @@ claude login          # đăng nhập gói Max/Pro
 claude -p "xin chào"  # thử: trả lời được là OK
 ```
 
+**Bắt buộc `CLAUDE_CONFIG_DIR` trong `.env`** — thư mục cấu hình Claude dành riêng cho
+pdf2learn, để không đụng `~/.claude` của tài khoản chính / extension VS Code:
+
+```bash
+CLAUDE_CONFIG_DIR=$HOME/.claude-pdf2learn claude    # /login tài khoản Pro/Max, /status, /exit
+echo "CLAUDE_CONFIG_DIR=$HOME/.claude-pdf2learn" >> .env
+```
+
+Với `--backend claude`, `main.py`, `toc_from_images.py`, `batch_toc.py` đều:
+- đọc `.env` của repo (dù chạy từ thư mục nào; `CLAUDE_CONFIG_DIR` trong `.env` thắng biến
+  cùng tên trong shell);
+- **dừng** nếu thiếu `CLAUDE_CONFIG_DIR` hoặc thư mục chưa tồn tại;
+- bỏ `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`,
+  `ANTHROPIC_PROFILE`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_*` khỏi môi trường của
+  `claude` (các biến này ghi đè đăng nhập subscription);
+- chạy `claude auth status`, **in tài khoản + thư mục cấu hình** sẽ dùng, và dừng nếu chưa
+  đăng nhập, nếu CLI báo thư mục cấu hình khác, hoặc nếu đang dùng API key
+  (`authMethod=api_key` — tính tiền theo token).
+
 Nếu `claude` không có trong PATH, tool cảnh báo ngay khi khởi động. **Không cần**
 `GEMINI_API_KEY` (và không cần key reviewer Groq/OpenRouter).
 

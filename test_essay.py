@@ -10,7 +10,7 @@ from pathlib import Path
 
 import fitz
 
-from stage_essay import ESSAY_MAX, generate_essay_one
+from stage_essay import ESSAY_MAX, _dup_key, _is_dup, generate_essay_one
 from stage_export import export, export_essay_more
 
 ROW = {"module_slug": "unit-3-tenses", "module_title": "Unit 3 — Các thì cơ bản",
@@ -74,6 +74,35 @@ def main():
     check("round" not in essays[0], "lượt đầu không gắn round")
     check("BIẾN THỂ" in prompt and all(q["source"] in ("book", "variant", "new")
                                        for q in essays), "prompt có biến thể + field source")
+
+    # ---- so trùng: diễn đạt lại = trùng; đổi số / đổi khái niệm = câu mới ----
+    def dup(a, b):
+        return _is_dup(_dup_key(a), [_dup_key(b)])
+    check(dup("Nêu khái niệm mạng LAN.", "Hãy nêu khái niệm về mạng LAN."), "trùng: thêm hư từ")
+    check(dup("Mạng LAN là gì?", "Nêu khái niệm mạng LAN."), "trùng: 'là gì' = 'khái niệm'")
+    check(dup("Kể tên các khu vực chính trong nhà ở.",
+              "Hãy kể tên các khu vực chính của nhà ở."), "trùng: đổi hư từ")
+    check(not dup("Nêu khái niệm mạng LAN.", "Nêu khái niệm mạng WAN."),
+          "không trùng: khác khái niệm")
+    check(not dup("Một ô tô đi 120 km trong 2 giờ. Tính vận tốc.",
+                  "Một ô tô đi 150 km trong 3 giờ. Tính vận tốc."),
+          "không trùng: biến thể đổi số liệu")
+    check(dup("Một ô tô đi 120 km trong 2 giờ. Tính vận tốc.",
+              "Một ô tô đi 120 km trong 2 giờ. Hãy tính vận tốc của ô tô."),
+          "trùng: cùng số liệu, chỉ diễn đạt lại")
+    check(not dup("Nêu vai trò của nhà ở đối với con người.",
+                  "Nêu đặc điểm chung của nhà ở Việt Nam."), "không trùng: khác ý")
+
+    para_client = FakeClient()
+    para_client.generate_json = lambda parts, schema, tag, temperature=0: {"questions": [
+        {"level": 1, "source": "new", "question": "Hãy nêu khái niệm về mạng LAN.",
+         "correct_answer": "(1) [1đ] ...", "explanation_vi": ""},
+        {"level": 1, "source": "new", "question": "Nêu khái niệm mạng WAN.",
+         "correct_answer": "(1) [1đ] ...", "explanation_vi": ""}]}
+    got = generate_essay_one(doc, ROW, LO, para_client, round_no=3, existing=[
+        {"question": "Mạng LAN là gì?", "correct_answer": "x"}])
+    check([q["question"] for q in got] == ["Nêu khái niệm mạng WAN."],
+          "sinh thêm: bỏ câu diễn đạt lại câu cũ, giữ câu mới")
 
     with tempfile.TemporaryDirectory() as td:
         out_more = Path(td) / "essay-more-02"

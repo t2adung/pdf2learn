@@ -4,11 +4,19 @@ Monkeypatch subprocess.run để giả lập envelope của `claude -p --output-
 Chạy: python3 test_claude_cli.py   (0 chi phí)
 """
 import json
+import os
 import sys
+import tempfile
 import types
 
 import claude_cli
 from claude_cli import ClaudeCLI, ClaudeError, ClaudeLimitError
+from utils import load_env
+
+# Thư mục cấu hình giả cho tài khoản Claude riêng + biến API key "rò rỉ" từ shell
+CFG = tempfile.mkdtemp(prefix="claude_cfg_")
+os.environ["CLAUDE_CONFIG_DIR"] = CFG
+os.environ["ANTHROPIC_API_KEY"] = "sk-ant-should-be-stripped"
 
 fails = []
 
@@ -32,8 +40,9 @@ def patch_run(fn):
 captured = {}
 
 
-def run_ok(cmd, input=None, capture_output=True, text=True, timeout=None):
+def run_ok(cmd, input=None, capture_output=True, text=True, timeout=None, env=None):
     captured["cmd"] = cmd
+    captured["env"] = env
     captured["prompt"] = cmd[2] if len(cmd) > 2 else ""   # prompt là tham số sau -p
     env = {"type": "result", "is_error": False,
            "result": '{"a": 1, "b": ["x", "y"]}',
@@ -57,6 +66,8 @@ check("prompt có chèn schema JSON", '"type": "object"' in captured["prompt"]
 check("cmd có --output-format json",
       "--output-format" in captured["cmd"] and "json" in captured["cmd"], str(captured["cmd"]))
 check("cmd có --add-dir (cấp quyền đọc thư mục tạm)", "--add-dir" in captured["cmd"])
+check("`claude -p` nhận CLAUDE_CONFIG_DIR", captured["env"].get("CLAUDE_CONFIG_DIR") == CFG)
+check("`claude -p` KHÔNG nhận ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY" not in captured["env"])
 
 
 # --- 2. strip ```-fence ---
@@ -122,6 +133,80 @@ def run_repair(cmd, input=None, **kw):
 patch_run(run_repair)
 check("JSON hỏng -> sửa 1 lần rồi parse được",
       ClaudeCLI().generate_json([{"text": "x"}], {}, "content") == {"fixed": 1})
+
+
+# --- 6. check_account: in tài khoản, chặn API key / chưa đăng nhập ---
+def auth_run(payload, rc=0):
+    def run(cmd, input=None, **kw):
+        assert cmd[:3] == ["claude", "auth", "status"], cmd
+        return fake_proc(stdout=json.dumps(payload), rc=rc)
+    return run
+
+
+patch_run(auth_run({"loggedIn": True, "authMethod": "claude.ai",
+                    "email": "phu@example.com", "configDirectory": CFG}))
+info = ClaudeCLI().check_account()
+check("check_account trả về thông tin subscription", info.get("email") == "phu@example.com")
+
+for method, rc in (("api_key", 0), ("api_key_helper", 0), ("none", 1)):
+    patch_run(auth_run({"authMethod": method}, rc=rc))
+    try:
+        ClaudeCLI().check_account()
+        check(f"check_account chặn authMethod={method}", False, "không raise")
+    except ClaudeError:
+        check(f"check_account chặn authMethod={method}", True)
+
+
+patch_run(auth_run({"authMethod": "claude.ai", "configDirectory": "/khac/.claude"}))
+try:
+    ClaudeCLI().check_account()
+    check("check_account chặn khi CLI dùng thư mục cấu hình khác", False, "không raise")
+except ClaudeError:
+    check("check_account chặn khi CLI dùng thư mục cấu hình khác", True)
+
+patch_run(auth_run({"authMethod": "claude.ai"}))
+for val, name in (("", "thiếu CLAUDE_CONFIG_DIR"), (CFG + "-chua-co", "thư mục chưa tồn tại")):
+    os.environ["CLAUDE_CONFIG_DIR"] = val
+    try:
+        ClaudeCLI().check_account()
+        check(f"check_account chặn khi {name}", False, "không raise")
+    except ClaudeError:
+        check(f"check_account chặn khi {name}", True)
+os.environ["CLAUDE_CONFIG_DIR"] = CFG
+
+home = os.path.expanduser("~")
+os.environ["CLAUDE_CONFIG_DIR"] = "~/.claude-pdf2learn"
+check("CLAUDE_CONFIG_DIR dạng ~ được đổi thành đường dẫn tuyệt đối",
+      claude_cli.claude_env()["CLAUDE_CONFIG_DIR"] == os.path.join(home, ".claude-pdf2learn"))
+os.environ["CLAUDE_CONFIG_DIR"] = CFG
+
+
+def run_old_cli(cmd, input=None, **kw):
+    return fake_proc(stdout="Unknown command: auth", rc=1)
+
+
+patch_run(run_old_cli)
+check("CLI cũ không có `auth status` -> chỉ cảnh báo, không dừng",
+      ClaudeCLI().check_account() == {})
+
+
+# --- 7. utils.load_env: .env thắng shell với CLAUDE_CONFIG_DIR, không ghi đè biến khác ---
+envdir = tempfile.mkdtemp()
+envfile = os.path.join(envdir, ".env")
+with open(envfile, "w", encoding="utf-8") as f:
+    f.write('# comment\nCLAUDE_CONFIG_DIR="/tu/env/.claude-pdf2learn"\n'
+            "export GEMINI_API_KEY=tu-env\n")
+os.environ["CLAUDE_CONFIG_DIR"] = "/tu/shell/.claude"
+os.environ["GEMINI_API_KEY"] = "tu-shell"
+load_env(envfile)
+check("load_env: CLAUDE_CONFIG_DIR lấy từ .env (thắng shell)",
+      os.environ["CLAUDE_CONFIG_DIR"] == "/tu/env/.claude-pdf2learn")
+check("load_env: biến khác giữ giá trị shell", os.environ["GEMINI_API_KEY"] == "tu-shell")
+import utils
+from pathlib import Path
+check("load_env: parser dự phòng (không có python-dotenv) đọc đúng",
+      utils._parse_env_file(Path(envfile)) == {"CLAUDE_CONFIG_DIR": "/tu/env/.claude-pdf2learn",
+                                                "GEMINI_API_KEY": "tu-env"})
 
 print()
 if fails:

@@ -32,7 +32,7 @@ import sys
 from pathlib import Path
 
 from subjects import PROFILE_KEYS, detect_subject
-from utils import load_json, log, save_json, warn
+from utils import load_env, load_json, log, save_json, warn
 
 # Phiên bản shape của 03_content.json. v2 = Learning Object JSON
 # (objectives/sections/mindmap/...) thay cho blob content_markdown (v1).
@@ -144,13 +144,8 @@ def main():
     # --essay-more cũng chỉ đụng câu tự luận của khoá đã gen, như --essay-only
     essay_only = args.essay_only or args.essay_more
 
-    # Đọc biến môi trường từ file .env nếu có (tiện chạy local, không phải export mỗi lần).
-    # Không bắt buộc cài python-dotenv: nếu thiếu thì bỏ qua, vẫn dùng export/Secrets như cũ.
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
+    # Đọc .env của repo (GEMINI_API_KEY, CLAUDE_CONFIG_DIR...) — xem utils.load_env.
+    load_env()
 
     if not args.pdf.exists():
         sys.exit(f"Không tìm thấy file: {args.pdf}")
@@ -161,12 +156,16 @@ def main():
         client = MockGemini()
         log("🧪 DRY-RUN: dùng MockGemini (không gọi API thật).")
     elif args.backend == "claude":
-        from claude_cli import CLAUDE_DEFAULT_MODEL, ClaudeCLI
+        from claude_cli import CLAUDE_DEFAULT_MODEL, ClaudeCLI, ClaudeError
         # --model mặc định là của Gemini -> chuyển sang model Claude mặc định.
         model = CLAUDE_DEFAULT_MODEL if args.model.startswith("gemini") else args.model
         client = ClaudeCLI(model=model, interval=args.interval)
         log(f"🟣 Backend CLAUDE (subscription qua `claude -p`, model={model}). "
             "Không cần API key.")
+        try:
+            client.check_account()
+        except ClaudeError as e:
+            sys.exit(str(e))
     else:
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         if not api_key:

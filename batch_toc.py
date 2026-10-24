@@ -49,7 +49,7 @@ import os
 import sys
 from pathlib import Path
 
-from utils import log, save_json, warn
+from utils import load_env, log, save_json, warn
 
 
 def build_client(args):
@@ -62,11 +62,16 @@ def build_client(args):
         log("🧪 DRY-RUN: dùng MockGemini (không gọi API thật).")
         return MockGemini()
     if args.backend == "claude":
-        from claude_cli import CLAUDE_DEFAULT_MODEL, ClaudeCLI
+        from claude_cli import CLAUDE_DEFAULT_MODEL, ClaudeCLI, ClaudeError
         model = CLAUDE_DEFAULT_MODEL if args.model.startswith("gemini") else args.model
         log(f"🟣 Backend CLAUDE (subscription qua `claude -p`, model={model}). "
             "Không cần API key.")
-        return ClaudeCLI(model=model, interval=args.interval)
+        client = ClaudeCLI(model=model, interval=args.interval)
+        try:
+            client.check_account()
+        except ClaudeError as e:
+            sys.exit(str(e))
+        return client
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         sys.exit("Thiếu GEMINI_API_KEY. Lấy key miễn phí tại https://aistudio.google.com "
@@ -205,11 +210,7 @@ def main():
                     help="dùng MockGemini, không cần API key (test pipeline/format)")
     args = ap.parse_args()
 
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
+    load_env()
 
     if not args.pdf_root.exists() or not args.pdf_root.is_dir():
         sys.exit(f"Không phải thư mục: {args.pdf_root}")

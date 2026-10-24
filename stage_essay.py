@@ -114,7 +114,11 @@ CỦA TÀI LIỆU GỐC — trừ explanation_vi):
 EXISTING_BLOCK = """
 CÁC CÂU ĐÃ CÓ CỦA BÀI NÀY ({n} câu) — đây là lượt SINH THÊM:
 {items}
-Câu mới KHÔNG được trùng câu hỏi hay trùng dữ kiện với các câu trên. Ưu tiên:
+Câu mới KHÔNG được trùng với các câu trên: không hỏi lại cùng một ý bằng cách diễn
+đạt khác (vd "X là gì?" và "Nêu khái niệm X" là TRÙNG), không dùng lại cùng dữ kiện.
+Chỉ được hỏi lại kiến thức đã có khi là BIẾN THỂ có dữ kiện MỚI (số liệu / bối cảnh /
+đối tượng khác, hoặc hỏi ngược). Trước khi trả về, tự soát từng câu mới với danh sách
+trên; câu trùng sẽ bị hệ thống loại tự động. Ưu tiên:
 (a) câu trong sách CHƯA được dùng; (b) BIẾN THỂ mới của câu trong sách hoặc của
 các câu trên (đổi số liệu / bối cảnh / hỏi ngược — xem mục BIẾN THỂ); (c) tự soạn.
 """
@@ -125,8 +129,34 @@ SUBJECT_KEEP_NOTE = (
     "level 1-4 và định dạng thang điểm \"(1) [..đ] ...\" trong correct_answer.)")
 
 
-def _norm(text: str) -> str:
-    return re.sub(r"\W+", " ", text.lower()).strip()
+# Từ không mang nội dung khi so trùng câu hỏi: từ lệnh / hư từ / cách hỏi định nghĩa
+# ("X là gì?" = "Nêu khái niệm X"). Giữ ít và an toàn để không gộp nhầm câu khác ý.
+DUP_STOPWORDS = frozenset(
+    "hãy em bạn về của các những trong cho biết nêu kể tên trình bày là gì và một "
+    "được có khái niệm định nghĩa the a an of please".split())
+DUP_JACCARD = 0.85
+_NUM_RE = re.compile(r"\d+(?:[.,]\d+)?")
+
+
+def _dup_key(text: str):
+    """(tập từ nội dung, danh sách số) của một câu hỏi — dùng để so trùng."""
+    low = text.lower()
+    words = {w for w in re.sub(r"\W+", " ", low).split()
+             if w not in DUP_STOPWORDS and not _NUM_RE.fullmatch(w)}
+    return words, sorted(_NUM_RE.findall(low))
+
+
+def _is_dup(key, keys) -> bool:
+    """Trùng khi CÙNG số liệu và tập từ nội dung gần như trùng (Jaccard >= DUP_JACCARD).
+    Khác số liệu = biến thể đổi số -> không tính trùng."""
+    words, nums = key
+    for w2, n2 in keys:
+        if nums != n2:
+            continue
+        union = words | w2
+        if not union or len(words & w2) / len(union) >= DUP_JACCARD:
+            return True
+    return False
 
 
 def _level(q: dict) -> int:
@@ -170,13 +200,18 @@ def generate_essay_one(doc, row: dict, content_entry: dict, client,
         ESSAY_SCHEMA, tag="essay", temperature=0.4)
 
     out = []
-    seen = {_norm(q["question"]) for q in existing}
+    keys = [_dup_key(q["question"]) for q in existing]
+    dropped = []
     for q in res.get("questions", []):
         question = str(q.get("question", "")).strip()
         answer = str(q.get("correct_answer", "")).strip()
-        if not question or not answer or _norm(question) in seen:
+        if not question or not answer:
             continue
-        seen.add(_norm(question))
+        key = _dup_key(question)
+        if _is_dup(key, keys):
+            dropped.append(question)
+            continue
+        keys.append(key)
         lv = _level(q)
         source = q.get("source") if q.get("source") in ("book", "variant", "new") else "new"
         item = {"question": question, "correct_answer": answer,
@@ -185,6 +220,9 @@ def generate_essay_one(doc, row: dict, content_entry: dict, client,
         if round_no:
             item["round"] = round_no
         out.append(item)
+    if dropped:
+        warn(f"{slug}: bỏ {len(dropped)} câu tự luận trùng câu đã có / trùng nhau, "
+             f"vd: {dropped[0][:80]}")
     if len(out) > ESSAY_MAX:
         out = out[:ESSAY_MAX]
     if len(out) < ESSAY_MIN:

@@ -1,5 +1,34 @@
 # pdf2learn v2 — Content chuyển từ Markdown blob sang Learning Object JSON
 
+## Backend claude: in rõ tài khoản đang dùng + sửa `.env` cho `toc_from_images.py`
+
+- `ClaudeCLI.check_account()`: khi khởi động (`main.py`, `toc_from_images.py`,
+  `batch_toc.py` với `--backend claude`) chạy `claude auth status`, in
+  `CLAUDE_CONFIG_DIR` + các trường tài khoản (email, `authMethod`, `configDirectory`...).
+  Dừng nếu chưa đăng nhập hoặc đang dùng API key / apiKeyHelper (tính tiền theo token).
+  CLI cũ không có `auth status` -> chỉ cảnh báo.
+- Sửa lỗi: `toc_from_images.py --backend claude` trước đây KHÔNG đọc `.env` (chỉ nhánh
+  gemini đọc) -> `CLAUDE_CONFIG_DIR` trong `.env` bị bỏ qua, OCR mục lục chạy bằng tài
+  khoản `~/.claude`. Nay đọc `.env` cho mọi backend.
+- **Bắt buộc `CLAUDE_CONFIG_DIR`** với `--backend claude` (dừng nếu thiếu / thư mục chưa
+  có / `claude auth status` báo thư mục khác). Chấp nhận `~/...`, tự đổi sang đường dẫn
+  tuyệt đối trước khi truyền cho `claude`.
+- Mọi tiến trình `claude` (cả `auth status` lẫn `claude -p`) chạy với môi trường đã bỏ
+  `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`,
+  `ANTHROPIC_PROFILE`, `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_BASE_URL`,
+  `CLAUDE_CODE_USE_BEDROCK/VERTEX/FOUNDRY` (các biến ghi đè đăng nhập subscription).
+- `utils.load_env()` thay cho các khối `load_dotenv()` rải rác: luôn đọc `.env` cạnh
+  code (không phụ thuộc thư mục đang đứng), có parser dự phòng khi chưa cài
+  python-dotenv (trước đây thiếu thư viện là lặng lẽ bỏ qua `.env`), và `.env` thắng
+  shell riêng với `CLAUDE_CONFIG_DIR`.
+- `--essay-more` chống trùng chặt hơn: trước đây chỉ bỏ câu trùng NGUYÊN VĂN. Nay so
+  theo tập từ nội dung (bỏ từ lệnh / hư từ, coi "X là gì?" = "Nêu khái niệm X") +
+  số liệu: cùng số liệu và Jaccard >= 0.85 -> trùng, bị loại (có log); khác số liệu
+  -> biến thể, giữ. Áp dụng cả với câu trùng nhau trong cùng lượt. Prompt sinh thêm
+  nói rõ diễn đạt lại cùng ý là trùng và yêu cầu tự soát trước khi trả về.
+- `env.example` liệt kê đủ biến repo dùng: `GEMINI_API_KEY`, `GROQ_API_KEY`,
+  `OPENROUTER_API_KEY`, `CLAUDE_CONFIG_DIR`, và các biến KHÔNG dùng cho backend claude.
+
 ## `--essay-more` — sinh THÊM câu tự luận + biến thể từ câu trong sách
 
 - Cờ mới `--essay-more` (khoá đã gen): mỗi lần chạy = 1 lượt, mỗi bài thêm 10-12 câu

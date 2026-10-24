@@ -32,6 +32,32 @@ _LIMIT_SIGNS = (
 )
 
 
+# Biến môi trường ghi đè đăng nhập subscription của `claude` (API key, token, profile,
+# cloud provider, gateway). Bỏ khỏi môi trường của tiến trình `claude` để nó LUÔN dùng
+# tài khoản đã /login trong CLAUDE_CONFIG_DIR — xem "Authentication precedence" trong
+# tài liệu Claude Code.
+STRIP_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+             "ANTHROPIC_PROFILE", "ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_BASE_URL",
+             "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY")
+
+
+def config_dir() -> str:
+    """CLAUDE_CONFIG_DIR đã chuẩn hoá thành đường dẫn tuyệt đối ("" nếu chưa đặt) —
+    chấp nhận cả "~/.claude-pdf2learn" trong .env."""
+    raw = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
+    return os.path.abspath(os.path.expanduser(raw)) if raw else ""
+
+
+def claude_env() -> dict:
+    """Môi trường cho tiến trình `claude`: bản sao os.environ, bỏ STRIP_ENV, ghi
+    CLAUDE_CONFIG_DIR dạng tuyệt đối."""
+    env = {k: v for k, v in os.environ.items() if k not in STRIP_ENV}
+    cfg = config_dir()
+    if cfg:
+        env["CLAUDE_CONFIG_DIR"] = cfg
+    return env
+
+
 class ClaudeError(RuntimeError):
     """Lỗi chung khi gọi Claude CLI."""
 
@@ -71,6 +97,61 @@ class ClaudeCLI:
         if shutil.which("claude") is None:
             warn("Không tìm thấy lệnh `claude` trong PATH. Cài Claude Code và "
                  "`claude login` (Max/Pro) trước khi dùng --backend claude.")
+
+    # ---------- tài khoản đang dùng ----------
+    def check_account(self) -> dict:
+        """BẮT BUỘC CLAUDE_CONFIG_DIR (từ .env hoặc shell) trỏ tới thư mục cấu hình đã
+        đăng nhập, rồi gọi `claude auth status` (JSON) để in RÕ tài khoản mà mọi lời
+        gọi `claude -p` sau đó sẽ dùng. Dừng (ClaudeError) nếu: thiếu / sai thư mục,
+        chưa đăng nhập, CLI báo thư mục khác, hoặc đang dùng API key (tính tiền theo
+        token). CLI quá cũ không có `auth status`: chỉ cảnh báo rồi chạy tiếp."""
+        cfg = config_dir()
+        if not cfg:
+            raise ClaudeError(
+                "--backend claude cần CLAUDE_CONFIG_DIR trong .env của repo (thư mục cấu "
+                "hình Claude dành riêng cho pdf2learn), vd:\n"
+                "  CLAUDE_CONFIG_DIR=/Users/<ten-user>/.claude-pdf2learn\n"
+                "Đăng nhập 1 lần: CLAUDE_CONFIG_DIR=<thư mục đó> claude -> /login. "
+                "Muốn dùng tài khoản mặc định thì ghi rõ CLAUDE_CONFIG_DIR=<home>/.claude.")
+        log(f"   CLAUDE_CONFIG_DIR = {cfg}")
+        if not os.path.isdir(cfg):
+            raise ClaudeError(
+                f"Thư mục {cfg} chưa tồn tại — chưa đăng nhập tài khoản cho pdf2learn. "
+                f"Chạy: CLAUDE_CONFIG_DIR={cfg} claude -> /login.")
+        stripped = [k for k in STRIP_ENV if os.environ.get(k)]
+        if stripped:
+            warn(f"Bỏ {', '.join(stripped)} khỏi môi trường của `claude` để dùng đúng "
+                 "tài khoản subscription trong CLAUDE_CONFIG_DIR.")
+        try:
+            proc = subprocess.run(["claude", "auth", "status"], capture_output=True,
+                                  text=True, timeout=60, env=claude_env())
+            info = json.loads((proc.stdout or "").strip() or "{}")
+        except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as e:
+            warn(f"Không đọc được `claude auth status` ({type(e).__name__}) — không xác "
+                 "nhận được tài khoản. Kiểm tra tay: claude rồi gõ /status.")
+            return {}
+        if not isinstance(info, dict):
+            info = {}
+        # in mọi trường đơn giản (email, tổ chức, kiểu đăng nhập, thư mục cấu hình...)
+        shown = ", ".join(f"{k}={v}" for k, v in info.items()
+                          if isinstance(v, (str, int, float, bool)) and v != "")
+        log(f"   Tài khoản Claude: {shown or '(không có thông tin)'}")
+        method = str(info.get("authMethod", ""))
+        if method in ("api_key", "api_key_helper"):
+            raise ClaudeError(
+                f"`claude` đang dùng {method} (TÍNH TIỀN THEO TOKEN), không phải "
+                f"subscription. Thư mục {cfg} đang đăng nhập bằng API key Console hoặc "
+                "có apiKeyHelper trong settings.json: chạy CLAUDE_CONFIG_DIR=<thư mục> "
+                "claude -> /logout -> /login bằng tài khoản Pro/Max.")
+        if method == "none" or (proc.returncode != 0 and not method):
+            raise ClaudeError(
+                "`claude` chưa đăng nhập cho thư mục cấu hình này. Chạy "
+                f"CLAUDE_CONFIG_DIR={cfg} claude rồi /login bằng tài khoản Pro/Max.")
+        used = info.get("configDirectory")
+        if used and os.path.realpath(os.path.expanduser(str(used))) != os.path.realpath(cfg):
+            raise ClaudeError(f"`claude` báo dùng thư mục cấu hình {used}, không phải "
+                              f"CLAUDE_CONFIG_DIR={cfg} — dừng để không dùng nhầm tài khoản.")
+        return info
 
     # ---------- usage ----------
     def _record(self, tag: str, tok_in: int, tok_out: int):
@@ -140,8 +221,8 @@ class ClaudeCLI:
                "--allowedTools", "Read",
                "--add-dir", self._tmp]
         try:
-            proc = subprocess.run(cmd, capture_output=True,
-                                  text=True, timeout=self.timeout)
+            proc = subprocess.run(cmd, capture_output=True, text=True,
+                                  timeout=self.timeout, env=claude_env())
         except FileNotFoundError:
             raise ClaudeError("Không chạy được lệnh `claude` (chưa cài Claude Code?).")
         except subprocess.TimeoutExpired:
