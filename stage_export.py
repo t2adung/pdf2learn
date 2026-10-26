@@ -13,6 +13,9 @@ Checklist validate:
 - correct_answer ∈ {A,B,C,D}
 - referential integrity: mọi topic_slug trong multichoice tồn tại trong topics
 - cảnh báo topic có < MIN_QUESTIONS câu hỏi
+
+multichoice.csv có cột cuối is_special (true/false): câu hấp dẫn để làm video short
+marketing (main.py --special). Câu chưa được đánh giá -> false.
 """
 import csv
 import datetime
@@ -25,7 +28,7 @@ from utils import log, warn
 TOPIC_COLS = ["module_slug", "module_title", "topic_slug", "topic_title",
               "order", "level", "page_start", "content"]
 QUESTION_COLS = ["topic_slug", "question", "A", "B", "C", "D",
-                 "correct_answer", "explanation_vi", "difficulty"]
+                 "correct_answer", "explanation_vi", "difficulty", "is_special"]
 MIN_QUESTIONS = 3
 # Cột essay.csv theo essay_template.csv của hệ thống import (đáp án mẫu = "answer";
 # nội bộ / import-payload.json vẫn gọi là "correct_answer").
@@ -188,7 +191,8 @@ def export(structure: list, content: dict, images: dict, questions: dict,
                             "A": q["A"], "B": q["B"], "C": q["C"], "D": q["D"],
                             "correct_answer": q["correct_answer"],
                             "explanation_vi": q["explanation_vi"],
-                            "difficulty": q["difficulty"]})
+                            "difficulty": q["difficulty"],
+                            "is_special": "true" if q.get("is_special") else "false"})
                 n_questions += 1
 
     # ---- import-payload.json (topics + câu hỏi tự luận) ----

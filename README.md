@@ -486,6 +486,55 @@ topic_slug,question,answer,explanation_vi,difficulty
 }
 ```
 
+### Câu hỏi "đặc biệt" cho video short marketing (`--special`)
+
+Cờ `--special` chọn ra các câu trắc nghiệm **thú vị, thông minh, gây tò mò, gắn thực tế** —
+đủ "đập vào mắt" để làm video short (TikTok / Reels / Shorts) quảng bá bibeli.net — và ghi
+vào cột cuối `is_special` (`true`/`false`) của `multichoice.csv`.
+
+| Flag | Mặc định | Ý nghĩa |
+|---|---|---|
+| `--special` | tắt | thêm 1 request AI/topic chấm từng câu → `is_special=true` cho câu **người lớn cũng phân vân** (tối đa 2 câu/topic, bài toàn câu dễ → 0 câu) |
+
+- **Pass chấm riêng** (AI đóng vai biên tập viên video ngắn) chạy sau bước sinh + kiểm chứng
+  đáp án, không gộp vào prompt sinh câu hỏi — tránh model tự chấm câu mình viết.
+- **AI chấm, code quyết.** AI không "chọn câu hay nhất bài" (cách đó khiến bài nào cũng có câu
+  được chọn, kể cả câu hiển nhiên). Thay vào đó AI chấm TỪNG câu theo thang tuyệt đối:
+  - `trap`: hiểu lầm phổ biến cụ thể khiến người lớn chọn sai (rỗng nếu không có),
+  - `adult_gut_answer`: đáp án đa số người lớn chọn theo trực giác trong 3 giây,
+  - `adult_hesitation` (1–5): 1 = ai cũng đúng ngay … 5 = đa số người lớn sai,
+  - `hook` (1–5): độ hấp dẫn khi làm video.
+
+  Code đánh `true` khi `hook >= 4` VÀ có `trap` VÀ (`adult_hesitation >= 4` HOẶC trực giác chọn
+  sai đáp án). Ngưỡng là hằng `MIN_HOOK`, `MIN_HESITATION`, `SPECIAL_MAX_PER_TOPIC` trong
+  `stage_questions.py` — muốn chọn nhiều/ít hơn chỉ cần đổi số, không phải sửa prompt.
+- Prompt có ví dụ hiệu chỉnh: câu hiển nhiên (tiết kiệm điện, túi nylon, pin mặt trời, câu phủ
+  định "KHÔNG phải"...) phải chấm thấp; câu như "Cà chua là rau hay quả?" chấm cao. Câu định
+  nghĩa **vẫn được chọn** nếu trực giác dễ sai.
+- Điểm chấm lưu trong `work/05_questions.json` (`special_eval`, `special_reason` = trap,
+  `special_v`) để soát vì sao câu được/không được chọn. Câu chưa chấm xuất ra `false`. Cột
+  `is_special` **luôn có** trong CSV, kể cả khi không bật cờ.
+- **Đổi tiêu chí → tự chấm lại.** Mỗi câu gắn `special_v` (phiên bản tiêu chí). Sách đã chấm
+  theo tiêu chí cũ chỉ cần chạy lại lệnh `--special` là được chấm lại (1 request/topic, không
+  sinh lại câu hỏi).
+
+Một cờ cho cả 3 trường hợp — chạy lại **đúng lệnh cũ + `--special`**:
+
+```bash
+# Sách ĐÃ XONG: chỉ đọc lại câu hỏi trong cache rồi đánh giá (1 request/topic,
+# KHÔNG sinh lại content/câu hỏi). Sách cũ chưa từng sinh tự luận -> thêm --no-essay.
+python3 main.py sach.pdf --level "Lớp 6" --toc-file runs/sach/work/01_toc.json --special --yes
+
+# Sách MỚI: đánh giá ngay sau khi sinh câu hỏi từng topic
+python3 main.py sach.pdf --level "Lớp 6" --special
+
+# Sách DỞ DANG: topic đã có câu hỏi -> chỉ đánh giá; topic chưa có -> sinh + đánh giá
+python3 main.py sach.pdf --level "Lớp 6" --special
+```
+
+Snapshot `output/multichoice.csv` luôn được ghi lại đầy đủ kèm `is_special`; các thư mục
+`batch-NN/` cũ bất biến (không được ghi lại). Chạy lại lần nữa thì topic đã đánh giá bị bỏ qua (0 token).
+
 ### Prompt theo môn học (`--subject-profile`)
 
 Prompt chung (định nghĩa / liệt kê / giải thích) hợp với môn "học thuộc" nhưng
@@ -544,6 +593,7 @@ dùng reviewer tương ứng). Có thể đặt trong file `.env` (chép từ `e
 output/
 ├── topics.csv        # snapshot TÍCH LUỸ đầy đủ — dùng cho lần import chính thức
 ├── multichoice.csv   #   (UTF-8 BOM, đúng cột template; ảnh tham chiếu bằng filename trần)
+│                     #   cột cuối is_special=true/false (câu cho video short, --special)
 ├── images/           # TẤT CẢ ảnh: {topic_slug}_{nn}.png|svg — upload riêng vào hệ thống
 ├── essay.csv         # câu hỏi tự luận (UTF-8 BOM): topic_slug,question,answer,explanation_vi,difficulty
 ├── import-payload.json # topics + câu hỏi tự luận dạng JSON (trừ khi --no-essay)

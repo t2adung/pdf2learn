@@ -1,5 +1,32 @@
 # pdf2learn v2 — Content chuyển từ Markdown blob sang Learning Object JSON
 
+
+
+## `--special` v2 — chỉ chọn câu "người lớn cũng phân vân"
+
+- Chạy thật v1 (52 bài) cho 137 câu `true`, bài nào cũng có 1–4 câu, kể cả câu hiển nhiên
+  ("Thiết bị nào chuyển ánh sáng mặt trời thành điện năng?"). Nguyên nhân: prompt bắt model
+  "chọn tối đa N câu" -> so sánh tương đối trong bài + con số quota mồi model chọn đủ số.
+- v2: model chấm TỪNG câu theo thang tuyệt đối (`trap`, `adult_gut_answer`,
+  `adult_hesitation` 1-5, `hook` 1-5; có kèm đáp án đúng). Code quyết:
+  `hook >= 4` và có `trap` và (`adult_hesitation >= 4` hoặc trực giác chọn sai). Trần 2
+  câu/bài, không có sàn. Prompt có ví dụ hiệu chỉnh (câu hiển nhiên phải chấm thấp).
+- Điểm lưu ở `special_eval` trong cache; `special_reason` = trap.
+- `SPECIAL_VERSION = 2`: cache chấm theo v1 tự được chấm lại khi chạy `--special`.
+
+## `--special` — đánh dấu câu trắc nghiệm hấp dẫn cho video short marketing (bibeli.net)
+
+- `multichoice.csv` thêm cột CUỐI `is_special` (`true`/`false`); câu chưa đánh giá -> `false`.
+- Cờ `--special`: pass đánh giá RIÊNG (`stage_questions.mark_special_one`, tag `special`,
+  1 request/topic) sau bước sinh + validate. Chọn tối đa ~25% số câu/topic, không ép đủ số.
+  Tiêu chí: gây tò mò / bất ngờ, gắn thực tế, cần suy luận, đọc kịp vài giây; câu định nghĩa
+  vẫn được chọn nếu gây bất ngờ. Lý do chọn lưu ở `special_reason` trong cache.
+- Cùng 1 flow cho sách đã xong (đánh giá lại cache `05_questions.json`, không sinh lại),
+  sách mới và sách dở dang: topic coi là xong khi mọi câu đã có key `is_special`.
+- Lỗi AI tạm thời -> không gán key, chạy lại sẽ thử lại; hết quota -> resume như các stage khác.
+- Không dùng chung với `--essay-only` / `--essay-more`.
+- Test: `test_special.py`.
+
 ## Backend claude: in rõ tài khoản đang dùng + sửa `.env` cho `toc_from_images.py`
 
 - `ClaudeCLI.check_account()`: khi khởi động (`main.py`, `toc_from_images.py`,
