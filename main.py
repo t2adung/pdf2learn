@@ -128,7 +128,9 @@ def main():
                     help="đánh giá câu trắc nghiệm hấp dẫn để làm video short marketing "
                          "(bibeli.net) -> cột is_special=true/false trong multichoice.csv. "
                          "Sách đã gen: chỉ đánh giá lại câu trong cache (1 request/topic, "
-                         "không sinh lại câu hỏi); sách mới/dở dang: đánh giá ngay sau khi sinh")
+                         "không sinh lại câu hỏi); sách mới/dở dang: đánh giá ngay sau khi sinh. "
+                         "Chỉ chọn câu người lớn cũng phân vân; tự chấm lại khi tiêu chí "
+                         "đổi phiên bản (SPECIAL_VERSION)")
     ap.add_argument("--no-validate", action="store_true",
                     help="bỏ qua pass kiểm chứng đáp án ở stage 5")
     ap.add_argument("--review", action="store_true",

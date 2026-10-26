@@ -203,7 +203,12 @@ class MockGemini(Gemini):
     def generate_json(self, parts, schema, tag, temperature=0.3):
         self._record(tag, 1200, 450)
         if tag == "special":
-            return {"picks": [{"index": 0, "reason": "Đáp án bất ngờ, gắn đời sống (mock)."}]}
+            # câu 0 đạt ngưỡng, câu 1 hiển nhiên (không đạt)
+            return {"evals": [
+                {"index": 0, "trap": "Đa số nghĩ ngược lại theo lẽ thường (mock).",
+                 "adult_gut_answer": "B", "adult_hesitation": 4, "hook": 5},
+                {"index": 1, "trap": "", "adult_gut_answer": "A",
+                 "adult_hesitation": 1, "hook": 2}]}
         if tag == "toc":
             return {"modules": [
                 {"title": "Chương I – Mở đầu", "topics": [

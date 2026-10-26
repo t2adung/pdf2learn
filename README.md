@@ -494,15 +494,29 @@ vào cột cuối `is_special` (`true`/`false`) của `multichoice.csv`.
 
 | Flag | Mặc định | Ý nghĩa |
 |---|---|---|
-| `--special` | tắt | thêm 1 request AI/topic đánh giá câu hấp dẫn → `is_special=true` (tối đa ~25% số câu/topic, không có câu đạt thì không chọn) |
+| `--special` | tắt | thêm 1 request AI/topic chấm từng câu → `is_special=true` cho câu **người lớn cũng phân vân** (tối đa 2 câu/topic, bài toàn câu dễ → 0 câu) |
 
-- **Pass đánh giá riêng** (AI đóng vai biên tập viên video ngắn) chạy sau bước sinh + kiểm chứng
-  đáp án, không gộp vào prompt sinh câu hỏi — tránh model tự chấm câu mình viết rồi đánh `true` tràn lan.
-- Tiêu chí: đáp án bất ngờ / phá hiểu lầm phổ biến, gắn đời sống, cần suy luận, đọc kịp trong
-  vài giây. Không chọn câu học thuộc khô, câu cần hình/bảng, câu dài. Câu **định nghĩa vẫn được
-  chọn** nếu gây bất ngờ (vd "Về mặt sinh học, cà chua là rau hay quả?").
-- Kết quả lưu trong `work/05_questions.json` (`is_special`, kèm `special_reason` để soát); câu
-  chưa đánh giá xuất ra `false`. Cột `is_special` **luôn có** trong CSV, kể cả khi không bật cờ.
+- **Pass chấm riêng** (AI đóng vai biên tập viên video ngắn) chạy sau bước sinh + kiểm chứng
+  đáp án, không gộp vào prompt sinh câu hỏi — tránh model tự chấm câu mình viết.
+- **AI chấm, code quyết.** AI không "chọn câu hay nhất bài" (cách đó khiến bài nào cũng có câu
+  được chọn, kể cả câu hiển nhiên). Thay vào đó AI chấm TỪNG câu theo thang tuyệt đối:
+  - `trap`: hiểu lầm phổ biến cụ thể khiến người lớn chọn sai (rỗng nếu không có),
+  - `adult_gut_answer`: đáp án đa số người lớn chọn theo trực giác trong 3 giây,
+  - `adult_hesitation` (1–5): 1 = ai cũng đúng ngay … 5 = đa số người lớn sai,
+  - `hook` (1–5): độ hấp dẫn khi làm video.
+
+  Code đánh `true` khi `hook >= 4` VÀ có `trap` VÀ (`adult_hesitation >= 4` HOẶC trực giác chọn
+  sai đáp án). Ngưỡng là hằng `MIN_HOOK`, `MIN_HESITATION`, `SPECIAL_MAX_PER_TOPIC` trong
+  `stage_questions.py` — muốn chọn nhiều/ít hơn chỉ cần đổi số, không phải sửa prompt.
+- Prompt có ví dụ hiệu chỉnh: câu hiển nhiên (tiết kiệm điện, túi nylon, pin mặt trời, câu phủ
+  định "KHÔNG phải"...) phải chấm thấp; câu như "Cà chua là rau hay quả?" chấm cao. Câu định
+  nghĩa **vẫn được chọn** nếu trực giác dễ sai.
+- Điểm chấm lưu trong `work/05_questions.json` (`special_eval`, `special_reason` = trap,
+  `special_v`) để soát vì sao câu được/không được chọn. Câu chưa chấm xuất ra `false`. Cột
+  `is_special` **luôn có** trong CSV, kể cả khi không bật cờ.
+- **Đổi tiêu chí → tự chấm lại.** Mỗi câu gắn `special_v` (phiên bản tiêu chí). Sách đã chấm
+  theo tiêu chí cũ chỉ cần chạy lại lệnh `--special` là được chấm lại (1 request/topic, không
+  sinh lại câu hỏi).
 
 Một cờ cho cả 3 trường hợp — chạy lại **đúng lệnh cũ + `--special`**:
 
