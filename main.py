@@ -24,6 +24,7 @@ Dùng:
   python main.py sach.pdf --no-images --no-validate   # nhanh, ít request
   python main.py sach.pdf --essay-only       # khoá đã gen: CHỈ sinh thêm câu tự luận
   python main.py sach.pdf --essay-more       # SINH THÊM 1 lượt câu tự luận (giữ câu cũ)
+  python main.py sach.pdf --special          # đánh dấu câu MCQ hấp dẫn cho video short (cột is_special)
 """
 import argparse
 import os
@@ -123,6 +124,11 @@ def main():
                          "Bị dừng giữa chừng: chạy lại đúng lệnh để làm tiếp lượt dở")
     ap.add_argument("--teacher-id", default="00000000-0000-0000-0000-000000000000",
                     help="giá trị teacher_id trong import-payload.json")
+    ap.add_argument("--special", action="store_true",
+                    help="đánh giá câu trắc nghiệm hấp dẫn để làm video short marketing "
+                         "(bibeli.net) -> cột is_special=true/false trong multichoice.csv. "
+                         "Sách đã gen: chỉ đánh giá lại câu trong cache (1 request/topic, "
+                         "không sinh lại câu hỏi); sách mới/dở dang: đánh giá ngay sau khi sinh")
     ap.add_argument("--no-validate", action="store_true",
                     help="bỏ qua pass kiểm chứng đáp án ở stage 5")
     ap.add_argument("--review", action="store_true",
@@ -140,6 +146,9 @@ def main():
         sys.exit("--essay-only và --no-essay mâu thuẫn nhau — chỉ dùng 1 trong 2.")
     if args.essay_more and (args.no_essay or args.redo_essay):
         sys.exit("--essay-more (sinh thêm) không dùng chung với --no-essay / --redo-essay.")
+    if args.special and (args.essay_only or args.essay_more):
+        sys.exit("--special không dùng chung với --essay-only / --essay-more "
+                 "(các chế độ đó không đụng câu trắc nghiệm).")
     essay_on = not args.no_essay
     # --essay-more cũng chỉ đụng câu tự luận của khoá đã gen, như --essay-only
     essay_only = args.essay_only or args.essay_more
@@ -320,6 +329,8 @@ def main():
             est += n_topics
         if essay_on:
             est += n_topics
+        if args.special:
+            est += n_topics
         print(f"\n👀 Kiểm tra mục lục phía trên: {n_topics} topic, "
               f"ước tính ~{est} request AI.")
         print("   Sai page range? Ctrl+C, sửa work/01_toc.json (hoặc dùng "
@@ -344,7 +355,7 @@ def main():
     from stage_content import generate_content_one
     from stage_essay import generate_essay_one
     from stage_images import generate_images_one
-    from stage_questions import generate_questions_one
+    from stage_questions import generate_questions_one, mark_special_one, needs_special
 
     content = load_json(caches[3], {}) or {}
     content["_v"] = CONTENT_VERSION
@@ -394,7 +405,8 @@ def main():
                       and (args.no_images or slug in images)
                       and slug in questions
                       and (not args.review or slug in review)
-                      and (not essay_on or slug in essays))
+                      and (not essay_on or slug in essays)
+                      and (not args.special or not needs_special(questions.get(slug, []))))
         if steps_done and not essay_only:
             log(f"── Topic {idx}/{total}: {slug} ✓ (hoàn chỉnh, bỏ qua) ──")
             continue
@@ -434,6 +446,11 @@ def main():
                 questions[slug] = qs
                 if dropped:
                     questions.setdefault("_dropped", {})[slug] = dropped
+                save_json(caches[5], questions)
+            # Đánh giá is_special: topic vừa sinh câu hỏi (sách mới) hoặc câu hỏi có
+            # sẵn trong cache nhưng chưa đánh giá (sách đã xong / dở dang).
+            if args.special and needs_special(questions[slug]):
+                mark_special_one(row, questions[slug], client)
                 save_json(caches[5], questions)
             if essay_on and slug not in essays:
                 essays[slug] = generate_essay_one(doc, row, content[slug], client,

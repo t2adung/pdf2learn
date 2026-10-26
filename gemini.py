@@ -202,6 +202,8 @@ class MockGemini(Gemini):
 
     def generate_json(self, parts, schema, tag, temperature=0.3):
         self._record(tag, 1200, 450)
+        if tag == "special":
+            return {"picks": [{"index": 0, "reason": "Đáp án bất ngờ, gắn đời sống (mock)."}]}
         if tag == "toc":
             return {"modules": [
                 {"title": "Chương I – Mở đầu", "topics": [

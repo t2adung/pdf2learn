@@ -1,5 +1,19 @@
 # pdf2learn v2 — Content chuyển từ Markdown blob sang Learning Object JSON
 
+
+## `--special` — đánh dấu câu trắc nghiệm hấp dẫn cho video short marketing (bibeli.net)
+
+- `multichoice.csv` thêm cột CUỐI `is_special` (`true`/`false`); câu chưa đánh giá -> `false`.
+- Cờ `--special`: pass đánh giá RIÊNG (`stage_questions.mark_special_one`, tag `special`,
+  1 request/topic) sau bước sinh + validate. Chọn tối đa ~25% số câu/topic, không ép đủ số.
+  Tiêu chí: gây tò mò / bất ngờ, gắn thực tế, cần suy luận, đọc kịp vài giây; câu định nghĩa
+  vẫn được chọn nếu gây bất ngờ. Lý do chọn lưu ở `special_reason` trong cache.
+- Cùng 1 flow cho sách đã xong (đánh giá lại cache `05_questions.json`, không sinh lại),
+  sách mới và sách dở dang: topic coi là xong khi mọi câu đã có key `is_special`.
+- Lỗi AI tạm thời -> không gán key, chạy lại sẽ thử lại; hết quota -> resume như các stage khác.
+- Không dùng chung với `--essay-only` / `--essay-more`.
+- Test: `test_special.py`.
+
 ## Backend claude: in rõ tài khoản đang dùng + sửa `.env` cho `toc_from_images.py`
 
 - `ClaudeCLI.check_account()`: khi khởi động (`main.py`, `toc_from_images.py`,

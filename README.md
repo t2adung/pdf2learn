@@ -486,6 +486,41 @@ topic_slug,question,answer,explanation_vi,difficulty
 }
 ```
 
+### Câu hỏi "đặc biệt" cho video short marketing (`--special`)
+
+Cờ `--special` chọn ra các câu trắc nghiệm **thú vị, thông minh, gây tò mò, gắn thực tế** —
+đủ "đập vào mắt" để làm video short (TikTok / Reels / Shorts) quảng bá bibeli.net — và ghi
+vào cột cuối `is_special` (`true`/`false`) của `multichoice.csv`.
+
+| Flag | Mặc định | Ý nghĩa |
+|---|---|---|
+| `--special` | tắt | thêm 1 request AI/topic đánh giá câu hấp dẫn → `is_special=true` (tối đa ~25% số câu/topic, không có câu đạt thì không chọn) |
+
+- **Pass đánh giá riêng** (AI đóng vai biên tập viên video ngắn) chạy sau bước sinh + kiểm chứng
+  đáp án, không gộp vào prompt sinh câu hỏi — tránh model tự chấm câu mình viết rồi đánh `true` tràn lan.
+- Tiêu chí: đáp án bất ngờ / phá hiểu lầm phổ biến, gắn đời sống, cần suy luận, đọc kịp trong
+  vài giây. Không chọn câu học thuộc khô, câu cần hình/bảng, câu dài. Câu **định nghĩa vẫn được
+  chọn** nếu gây bất ngờ (vd "Về mặt sinh học, cà chua là rau hay quả?").
+- Kết quả lưu trong `work/05_questions.json` (`is_special`, kèm `special_reason` để soát); câu
+  chưa đánh giá xuất ra `false`. Cột `is_special` **luôn có** trong CSV, kể cả khi không bật cờ.
+
+Một cờ cho cả 3 trường hợp — chạy lại **đúng lệnh cũ + `--special`**:
+
+```bash
+# Sách ĐÃ XONG: chỉ đọc lại câu hỏi trong cache rồi đánh giá (1 request/topic,
+# KHÔNG sinh lại content/câu hỏi). Sách cũ chưa từng sinh tự luận -> thêm --no-essay.
+python3 main.py sach.pdf --level "Lớp 6" --toc-file runs/sach/work/01_toc.json --special --yes
+
+# Sách MỚI: đánh giá ngay sau khi sinh câu hỏi từng topic
+python3 main.py sach.pdf --level "Lớp 6" --special
+
+# Sách DỞ DANG: topic đã có câu hỏi -> chỉ đánh giá; topic chưa có -> sinh + đánh giá
+python3 main.py sach.pdf --level "Lớp 6" --special
+```
+
+Snapshot `output/multichoice.csv` luôn được ghi lại đầy đủ kèm `is_special`; các thư mục
+`batch-NN/` cũ bất biến (không được ghi lại). Chạy lại lần nữa thì topic đã đánh giá bị bỏ qua (0 token).
+
 ### Prompt theo môn học (`--subject-profile`)
 
 Prompt chung (định nghĩa / liệt kê / giải thích) hợp với môn "học thuộc" nhưng
@@ -544,6 +579,7 @@ dùng reviewer tương ứng). Có thể đặt trong file `.env` (chép từ `e
 output/
 ├── topics.csv        # snapshot TÍCH LUỸ đầy đủ — dùng cho lần import chính thức
 ├── multichoice.csv   #   (UTF-8 BOM, đúng cột template; ảnh tham chiếu bằng filename trần)
+│                     #   cột cuối is_special=true/false (câu cho video short, --special)
 ├── images/           # TẤT CẢ ảnh: {topic_slug}_{nn}.png|svg — upload riêng vào hệ thống
 ├── essay.csv         # câu hỏi tự luận (UTF-8 BOM): topic_slug,question,answer,explanation_vi,difficulty
 ├── import-payload.json # topics + câu hỏi tự luận dạng JSON (trừ khi --no-essay)

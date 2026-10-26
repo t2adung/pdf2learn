@@ -135,3 +135,100 @@ def generate_questions_one(row: dict, content_entry: dict, client,
         except Exception as e:
             warn(f"{slug}: validation lỗi ({e}), giữ nguyên câu hỏi chưa kiểm chứng.")
     return questions, dropped
+
+
+# ---------------------------------------------------------------------------
+# Pass "special": chọn câu hấp dẫn để làm video short marketing (bibeli.net)
+# ---------------------------------------------------------------------------
+# Pass RIÊNG (LLM-as-judge) chạy sau validate, không gộp vào prompt sinh câu hỏi:
+# model tự chấm câu mình vừa viết hay thiên vị (đánh true tràn lan). Cùng 1 hàm
+# dùng cho sách mới, sách đã xong (đọc lại cache) và sách dở dang.
+SPECIAL_RATIO = 0.25          # tối đa ~25% số câu / topic được đánh dấu
+
+SPECIAL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "picks": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer"},
+                "reason": {"type": "string"},
+            },
+            "required": ["index", "reason"],
+        }},
+    },
+    "required": ["picks"],
+}
+
+SPECIAL_PROMPT = """Bạn là biên tập viên nội dung video ngắn (TikTok / Reels / Shorts) cho
+bibeli.net — nền tảng học tập. Từ bộ câu trắc nghiệm của bài "{topic_title}" (trình độ
+"{level}"), hãy CHỌN những câu đủ hấp dẫn để làm video short marketing: người xem lướt qua
+phải dừng lại, muốn tự trả lời và muốn xem đáp án.
+
+TIÊU CHÍ CHỌN (câu được chọn nên thoả nhiều tiêu chí):
+1. Gây tò mò / bất ngờ: đáp án trái trực giác, phá một hiểu lầm phổ biến, có khoảnh khắc "à ha".
+2. Gắn đời sống thực tế: hiện tượng, đồ vật, tình huống người xem gặp hằng ngày.
+3. Thông minh: cần suy luận một chút, không chỉ học vẹt; phương án nhiễu đủ "lừa" để gây tranh luận.
+4. Đọc nhanh hiểu ngay: câu hỏi + 4 phương án ngắn, đọc kịp trong vài giây, không cần hình/bảng.
+
+KHÔNG CHỌN:
+- Câu học thuộc khô: đáp án chỉ nhắc lại nguyên văn sách, ai cũng đoán được (vd "Tế bào là gì?").
+  LƯU Ý: câu định nghĩa KHÔNG bị loại vì là định nghĩa — nếu định nghĩa đó gây bất ngờ / phá hiểu
+  lầm (vd "Về mặt sinh học, cà chua là rau hay quả?") thì VẪN chọn.
+- Câu phải xem hình, bảng, sơ đồ mới hiểu.
+- Câu dài, nhiều mệnh đề, phương án dài dòng.
+
+QUY TẮC:
+- Chọn TỐI ĐA {max_picks} câu, ưu tiên câu nổi bật nhất. Không có câu nào đạt thì trả về picks rỗng —
+  KHÔNG chọn cho đủ số.
+- index tính từ 0 theo danh sách dưới đây; reason: 1 câu ngắn bằng TIẾNG VIỆT vì sao câu đó hấp dẫn.
+
+CÁC CÂU HỎI:
+{questions}"""
+
+
+def needs_special(questions: list) -> bool:
+    """True nếu còn câu chưa được đánh giá is_special (cache cũ / sách dở dang)."""
+    return any("is_special" not in q for q in questions)
+
+
+def mark_special_one(row: dict, questions: list, client) -> int:
+    """Đánh giá + ghi q["is_special"] (và q["special_reason"] nếu được chọn) TẠI CHỖ cho
+    MỌI câu của một topic. Trả về số câu được chọn.
+
+    Lỗi AI tạm thời -> warn, KHÔNG gán key để lần chạy sau thử lại. Lỗi hết quota
+    (GeminiError / ClaudeError) để nổi lên cho main.py xử lý resume."""
+    if not questions:
+        return 0
+    from claude_cli import ClaudeError
+    from gemini import GeminiError
+    max_picks = max(1, round(len(questions) * SPECIAL_RATIO))
+    log(f"   [special ] chọn câu hấp dẫn cho video short (tối đa {max_picks}/"
+        f"{len(questions)})...")
+    prompt = SPECIAL_PROMPT.format(
+        topic_title=row["topic_title"], level=row["level"], max_picks=max_picks,
+        questions=_fmt_questions_for_validation(questions))
+    try:
+        res = client.generate_json([{"text": prompt}], SPECIAL_SCHEMA,
+                                   tag="special", temperature=0.2)
+    except (GeminiError, ClaudeError):
+        raise
+    except Exception as e:
+        warn(f"{row['topic_slug']}: đánh giá is_special lỗi ({e}) — để lần chạy sau.")
+        return 0
+    picks = {}
+    for p in res.get("picks", []):
+        try:
+            i = int(p.get("index"))
+        except (TypeError, ValueError):
+            continue
+        if 0 <= i < len(questions) and i not in picks and len(picks) < max_picks:
+            picks[i] = str(p.get("reason", "")).strip()
+    for i, q in enumerate(questions):
+        q["is_special"] = i in picks
+        if i in picks:
+            q["special_reason"] = picks[i]
+        else:
+            q.pop("special_reason", None)
+    log(f"   [special ] {len(picks)} câu is_special=true")
+    return len(picks)
